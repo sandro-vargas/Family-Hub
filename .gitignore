@@ -26,3 +26,7 @@ Thumbs.db
 .idea/
 .agent/
 .system_generated/
+
+
+# TypeScript build cache
+*.tsbuildinfo

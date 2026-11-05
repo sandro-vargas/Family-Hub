@@ -30,3 +30,4 @@ Die API-Routen und Logik für die bidirektionale Synchronisation (`src/app/api/c
 - [x] Familienmitglieder aktualisiert: Jenni, Sandro, Chiara (Tochter Chiara von ToDos ausgeschlossen)
 - [x] Modul "Bedarf" (ehemals Galaxus)
 - [x] Vorbereitung für Vercel-Deployment & Supabase-Schema
+
