@@ -6,7 +6,7 @@ import { AppShell } from '@/components/app-shell';
 export const metadata: Metadata = {
   title: 'Family Hub | 8624 Grüt (ZH)',
   description:
-    'Gemeinsame Familien-Applikation für Termine, Essensplanung (Thermomix & Gemini KI), Einkaufsliste und Galaxus Haushaltsbedarf.',
+    'Gemeinsame Familien-Applikation für Termine, Essensplanung (Thermomix & Gemini KI), Einkaufsliste und Haushaltsbedarf.',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -26,8 +26,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="de-CH" className="h-full antialiased font-sans">
-      <body className="min-h-full flex flex-col bg-[#F4F7F5] text-[#1E293B]">
+    <html lang="de-CH" className="h-full antialiased font-sans" suppressHydrationWarning>
+      <body className="min-h-full flex flex-col bg-[#F4F7F5] text-[#1E293B]" suppressHydrationWarning>
         <FamilyProvider>
           <AppShell>{children}</AppShell>
         </FamilyProvider>

@@ -67,10 +67,12 @@ export default function AndroidHomeScreenPage() {
 
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [now, setNow] = useState<Date>(new Date());
+  const [mounted, setMounted] = useState(false);
   const [quickShopInput, setQuickShopInput] = useState('');
   const [quickAddedFeedback, setQuickAddedFeedback] = useState<string | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     fetch('/api/weather')
       .then((r) => r.json())
       .then((data) => setWeather(data))
@@ -125,13 +127,15 @@ export default function AndroidHomeScreenPage() {
     setTimeout(() => setQuickAddedFeedback(null), 3500);
   };
 
-  const formattedDate = new Intl.DateTimeFormat('de-CH', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-  }).format(now);
+  const formattedDate = mounted
+    ? new Intl.DateTimeFormat('de-CH', {
+        weekday: 'long',
+        day: '2-digit',
+        month: 'long',
+      }).format(now)
+    : '';
 
-  const formattedTime = now.toTimeString().slice(0, 5);
+  const formattedTime = mounted ? now.toTimeString().slice(0, 5) : '';
 
   // 8 Android Launcher App Icons (2x4 on Tablet/Desktop, 4x2 on Pixel Smartphone)
   const appIcons = [
