@@ -59,16 +59,23 @@ git push
 3. Vercel erkennt das Next.js-Projekt automatisch.
 
 ### Schritt C: Umgebungsvariablen in Vercel eintragen
-Trage unter **Environment Variables** in Vercel folgende Schlüssel ein:
+Trage unter **Environment Variables** in Vercel zunächst die Basis-Schlüssel für Phase 1 ein:
 
-| Variable | Woher / Zweck | Pflicht? |
+| Variable | Woher / Zweck | Pflicht für Phase 1? |
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Aus deinem Supabase Dashboard | **Empfohlen** (für Geräte-Sync) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Aus deinem Supabase Dashboard | **Empfohlen** (für Geräte-Sync) |
 | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com) (Kostenlos) | **Ja** (für Rezept- & Freizeit-KI) |
-| `GOOGLE_CALENDAR_ID` | Eure Kalender-ID (z. B. `primary`) | Optional (für 2-Wege Google Sync) |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Google Cloud Service Account | Optional (für 2-Wege Google Sync) |
-| `GOOGLE_PRIVATE_KEY` | Privater Schlüssel des Service Accounts | Optional (für 2-Wege Google Sync) |
+
+> [!NOTE]
+> **Offenes ToDo (Phase 2 - Google Calendar Service Account):**
+> Die folgenden Variablen werden in einem zweiten Schritt konfiguriert, sobald die Google Cloud Console eingerichtet wird:
+> 
+> | Variable | Woher / Zweck | Status |
+> | :--- | :--- | :--- |
+> | `GOOGLE_CALENDAR_ID` | Eure Kalender-ID (z. B. `primary` oder `familie@...`) | ⏳ *Pendent für Schritt 2* |
+> | `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Google Cloud Service Account E-Mail | ⏳ *Pendent für Schritt 2* |
+> | `GOOGLE_PRIVATE_KEY` | Privater Schlüssel (`.pem` / private key) | ⏳ *Pendent für Schritt 2* |
 
 4. Klicke auf **„Deploy“**. Nach ca. 60 Sekunden ist eure App unter `https://dein-projekt.vercel.app` live erreichbar!
 
