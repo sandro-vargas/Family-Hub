@@ -21,6 +21,25 @@ Die API-Routen und Logik für die bidirektionale Synchronisation (`src/app/api/c
 
 ---
 
+## ⏳ Phase 3: Eigene Login-Seite & Familien-Authentifizierung
+
+Ersetzen des Vercel-Schutzes durch eine eigene, hübsche Familien-Loginseite im Android-Look.
+
+### Offene Aufgaben:
+- [ ] **Vercel Deployment Protection deaktivieren:**
+  - Im Vercel Dashboard unter *Project Settings → Deployment Protection → Vercel Authentication* auf **Disabled** setzen, damit niemand einen Vercel-Account benötigt.
+- [ ] **Eigene Login-Seite (`/login`) erstellen:**
+  - Optik im einheitlichen Android/Family-Hub-Design (z. B. Willkommens-Screen mit Familien-Foto oder Grüt-ZH-Hintergrund).
+  - Profil-Auswahl (Sandro / Jenni / Chiara) oder Familien-Passwort / 4-stellige PIN (ideal für schnellen Zugriff auf iPad-Wanddisplay & Handys ohne mühsames Tippen).
+  - Alternativ: Supabase Auth (E-Mail/Passwort oder Magic Link).
+- [ ] **Next.js Auth-Middleware einrichten:**
+  - Nicht authentifizierte Zugriffe automatisch auf `/login` weiterleiten.
+  - Cookie/Session-Dauer für Mobilgeräte und Tablet dauerhaft speichern ("Angemeldet bleiben").
+- [ ] **Rollen & Berechtigungen:**
+  - Chiara im Kinder-/Lese-Modus, Sandro & Jenni mit vollen Rechten.
+
+---
+
 ## ✅ Bereits abgeschlossen (Phase 1)
 - [x] Android Home Screen Redesign (Widgets, App Grid, Floating Dock)
 - [x] Monatskalenderansicht (Mo–So Matrix mit Tages-Inspektor)
