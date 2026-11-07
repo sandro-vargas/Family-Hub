@@ -241,10 +241,6 @@ function LoginForm() {
             </>
           )}
         </button>
-
-        <p className="mt-4 text-[11px] text-slate-400 font-medium">
-          Standard-Code: <span className="font-bold text-slate-500">8624</span> (oder eigener Code in Vercel)
-        </p>
       </div>
     </div>
   );

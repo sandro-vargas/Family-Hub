@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { AUTH_COOKIE_NAME, isValidSession } from '@/lib/auth';
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. Allow public static assets and auth endpoints
@@ -16,7 +16,7 @@ export function middleware(request: NextRequest) {
   ) {
     if (pathname === '/login') {
       const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-      if (isValidSession(token)) {
+      if (token && (await isValidSession(token))) {
         return NextResponse.redirect(new URL('/', request.url));
       }
     }
@@ -25,7 +25,7 @@ export function middleware(request: NextRequest) {
 
   // 2. Check session token
   const token = request.cookies.get(AUTH_COOKIE_NAME)?.value;
-  const isAuthorized = isValidSession(token);
+  const isAuthorized = token ? await isValidSession(token) : false;
 
   if (!isAuthorized) {
     if (pathname.startsWith('/api/')) {
@@ -50,3 +50,4 @@ export const config = {
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
+
