@@ -21,22 +21,13 @@ Die API-Routen und Logik für die bidirektionale Synchronisation (`src/app/api/c
 
 ---
 
-## ⏳ Phase 3: Eigene Login-Seite & Familien-Authentifizierung
-
-Ersetzen des Vercel-Schutzes durch eine eigene, hübsche Familien-Loginseite im Android-Look.
-
-### Offene Aufgaben:
-- [ ] **Vercel Deployment Protection deaktivieren:**
-  - Im Vercel Dashboard unter *Project Settings → Deployment Protection → Vercel Authentication* auf **Disabled** setzen, damit niemand einen Vercel-Account benötigt.
-- [ ] **Eigene Login-Seite (`/login`) erstellen:**
-  - Optik im einheitlichen Android/Family-Hub-Design (z. B. Willkommens-Screen mit Familien-Foto oder Grüt-ZH-Hintergrund).
-  - Profil-Auswahl (Sandro / Jenni / Chiara) oder Familien-Passwort / 4-stellige PIN (ideal für schnellen Zugriff auf iPad-Wanddisplay & Handys ohne mühsames Tippen).
-  - Alternativ: Supabase Auth (E-Mail/Passwort oder Magic Link).
-- [ ] **Next.js Auth-Middleware einrichten:**
-  - Nicht authentifizierte Zugriffe automatisch auf `/login` weiterleiten.
-  - Cookie/Session-Dauer für Mobilgeräte und Tablet dauerhaft speichern ("Angemeldet bleiben").
-- [ ] **Rollen & Berechtigungen:**
-  - Chiara im Kinder-/Lese-Modus, Sandro & Jenni mit vollen Rechten.
+## ✅ Phase 3: Eigene Login-Seite & Familien-Authentifizierung (Abgeschlossen)
+- [x] Vercel Authentication durch eigene In-App-Lösung ersetzt
+- [x] Eigene Login-Seite (`/login`) im passenden Android-Look mit taktilem Ziffernblock & Profilauswahl
+- [x] Next.js Middleware (`src/middleware.ts`) leitet unbefugte Besucher sofort auf `/login` um
+- [x] Familien-PIN / Passcode Schutz (`FAMILY_PASSCODE`, Standard: `8624`)
+- [x] 1-Jahres Session-Cookie („Angemeldet bleiben“ für Handys & Wand-iPad)
+- [x] Manueller Sperren-Button in der Top-Bar integriert
 
 ---
 

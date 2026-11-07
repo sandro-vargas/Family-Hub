@@ -15,6 +15,7 @@ import {
   Tablet,
   ArrowLeft,
   Home,
+  Lock,
 } from 'lucide-react';
 import { useFamily } from '@/context/family-context';
 
@@ -92,6 +93,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const openTodosCount = todos.filter((t) => !t.is_completed).length;
 
   const isHomeScreen = pathname === '/';
+  const isLoginPage = pathname === '/login';
+
+  const handleLockApp = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.href = '/login';
+    }
+  };
+
+  if (isLoginPage) {
+    return <main>{children}</main>;
+  }
 
   const getBadgeCount = (key?: 'shopping' | 'todos' | 'needs') => {
     if (key === 'shopping') return openShoppingCount;
@@ -185,6 +199,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="hidden sm:inline">
                 {isKioskMode ? 'iPad Modus AN' : 'iPad Modus'}
               </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLockApp}
+              className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-2xl text-xs font-bold border transition-all bg-white/85 border-slate-200/80 text-slate-500 hover:text-slate-800 hover:bg-white shadow-2xs"
+              title="App sperren"
+            >
+              <Lock className="h-4 w-4" />
+              <span className="hidden lg:inline">Sperren</span>
             </button>
           </div>
         </div>

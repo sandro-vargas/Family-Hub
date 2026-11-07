@@ -63,9 +63,10 @@ Trage unter **Environment Variables** in Vercel zunächst die Basis-Schlüssel f
 
 | Variable | Woher / Zweck | Pflicht für Phase 1? |
 | :--- | :--- | :--- |
-| `NEXT_PUBLIC_SUPABASE_URL` | Aus deinem Supabase Dashboard | **Empfohlen** (für Geräte-Sync) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Aus deinem Supabase Dashboard | **Empfohlen** (für Geräte-Sync) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Aus deinem Supabase Dashboard | **Ja** (für Geräte-Sync) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Aus deinem Supabase Dashboard | **Ja** (für Geräte-Sync) |
 | `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com) (Kostenlos) | **Ja** (für Rezept- & Freizeit-KI) |
+| `FAMILY_PASSCODE` | Euer Wunsch-Passcode (z. B. `8624` oder PIN) | Optional (Standard ist `8624`) |
 
 > [!NOTE]
 > **Offenes ToDo (Phase 2 - Google Calendar Service Account):**
