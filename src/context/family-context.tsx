@@ -1,6 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+} from 'react';
 import {
   Household,
   HouseholdMember,
@@ -11,20 +17,21 @@ import {
   MealPlan,
   ShoppingItem,
   HouseholdNeed,
-  NeedPriority,
   TodoCategory,
   TodoItem,
-  TodoPriority,
   LeisureActivity,
   GoogleSyncConfig,
+  MealSlotType,
+  TodoPriority,
+  NeedPriority,
 } from '@/types/family';
 import {
   INITIAL_HOUSEHOLD,
   INITIAL_MEMBERS,
   INITIAL_STORE_CATEGORIES,
   INITIAL_RECIPES,
-  INITIAL_MEAL_PLANS,
   INITIAL_MEAL_WISHES,
+  INITIAL_MEAL_PLANS,
   INITIAL_SHOPPING_ITEMS,
   INITIAL_CALENDAR_EVENTS,
   INITIAL_HOUSEHOLD_NEEDS,
@@ -38,7 +45,9 @@ import {
 } from '@/lib/seed-data';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
-interface AddShoppingInput {
+const STORAGE_KEY = 'family_hub_offline_cache_v2';
+
+export interface AddShoppingInput {
   name: string;
   quantity?: number | null;
   unit?: string | null;
@@ -46,7 +55,7 @@ interface AddShoppingInput {
   source_meal_plan_id?: string | null;
 }
 
-interface AddTodoInput {
+export interface AddTodoInput {
   title: string;
   notes?: string | null;
   category_slug: string;
@@ -102,10 +111,10 @@ interface FamilyContextValue {
   claimTodo: (id: string, memberId: string | null) => void;
   deleteTodo: (id: string) => void;
 
-  // Leisure Activities (Zürcher Oberland)
+  // Leisure Advisor
   leisureActivities: LeisureActivity[];
 
-  // Household Needs (Galaxus)
+  // Household Needs
   householdNeeds: HouseholdNeed[];
   addHouseholdNeed: (need: {
     title: string;
@@ -118,15 +127,30 @@ interface FamilyContextValue {
   toggleHouseholdNeedPurchased: (id: string) => void;
   deleteHouseholdNeed: (id: string) => void;
 
-  // Member helper
+  // Helpers
   getMemberById: (id: string) => HouseholdMember | undefined;
   updateMemberColor: (memberId: string, colorHex: string) => void;
   updateDefaultPortions: (portions: number) => void;
 }
 
-const STORAGE_KEY = 'family_hub_app_state_v3';
-
 const FamilyContext = createContext<FamilyContextValue | null>(null);
+
+function safeDb(promise: PromiseLike<{ error: any }>, actionName: string) {
+  Promise.resolve(promise)
+    .then(({ error }) => {
+      if (error) console.error(`[Supabase] ${actionName} error:`, error);
+    })
+    .catch((err) => {
+      console.error(`[Supabase] ${actionName} exception:`, err);
+    });
+}
+
+function generateId(prefix: string): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
 
 export function normalizeIngredientName(raw: string): string {
   return raw
@@ -221,7 +245,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
   const isLiveSupabase = isSupabaseConfigured();
 
-  // Load persisted state from localStorage + listen across tabs
+  // 1. Initial Load from LocalStorage Cache (for instant offline render)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -229,7 +253,6 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         const parsed = JSON.parse(saved);
         if (parsed.household) setHousehold(parsed.household);
         if (parsed.members) {
-          // Migration: Falls noch 'Frau' oder 'Tochter' gespeichert ist, Namen & Kürzel auf Jenni / Chiara aktualisieren
           const updatedMembers = (parsed.members as HouseholdMember[]).map((m) => {
             if (m.id === MEMBER_FRAU_ID && (m.display_name === 'Frau' || m.short_code === 'FR')) {
               return { ...m, display_name: 'Jenni', short_code: 'JE' };
@@ -281,7 +304,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  // Persist to localStorage whenever state changes
+  // 2. Persist to localStorage whenever state changes
   useEffect(() => {
     if (!hydrated) return;
     try {
@@ -325,21 +348,164 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     googleSyncConfig,
   ]);
 
-  // Optional Supabase Realtime Subscription when configured
+  // 3. Supabase Live Sync (Initial Data Fetch + Multi-Device Realtime Subscriptions)
   useEffect(() => {
     if (!isLiveSupabase) return;
     const supabase = createClient();
     if (!supabase) return;
 
+    let isSubscribed = true;
+
+    async function initSupabaseData() {
+      try {
+        const [
+          shopRes,
+          todoRes,
+          eventRes,
+          mealRes,
+          needRes,
+          wishRes,
+          recipeRes,
+        ] = await Promise.all([
+          supabase.from('shopping_items').select('*').order('created_at', { ascending: false }),
+          supabase.from('todos').select('*').order('created_at', { ascending: false }),
+          supabase.from('calendar_events').select('*').order('start_at', { ascending: true }),
+          supabase.from('meal_plans').select('*').order('planned_date', { ascending: true }),
+          supabase.from('household_needs').select('*').order('created_at', { ascending: false }),
+          supabase.from('meal_wishes').select('*').order('created_at', { ascending: false }),
+          supabase.from('recipes').select('*').order('created_at', { ascending: false }),
+        ]);
+
+        if (!isSubscribed) return;
+
+        // If Supabase has data, update state. If completely empty, seed initial data!
+        if (shopRes.data && shopRes.data.length > 0) {
+          setShoppingItems(shopRes.data as ShoppingItem[]);
+        } else if (shopRes.data && shopRes.data.length === 0) {
+          await supabase.from('shopping_items').insert(INITIAL_SHOPPING_ITEMS);
+        }
+
+        if (todoRes.data && todoRes.data.length > 0) {
+          setTodos(todoRes.data as TodoItem[]);
+        } else if (todoRes.data && todoRes.data.length === 0) {
+          await supabase.from('todos').insert(INITIAL_TODOS);
+        }
+
+        if (eventRes.data && eventRes.data.length > 0) {
+          setCalendarEvents(eventRes.data as CalendarEvent[]);
+        } else if (eventRes.data && eventRes.data.length === 0) {
+          await supabase.from('calendar_events').insert(INITIAL_CALENDAR_EVENTS);
+        }
+
+        if (mealRes.data && mealRes.data.length > 0) {
+          setMealPlans(mealRes.data as MealPlan[]);
+        } else if (mealRes.data && mealRes.data.length === 0) {
+          await supabase.from('meal_plans').insert(INITIAL_MEAL_PLANS);
+        }
+
+        if (needRes.data && needRes.data.length > 0) {
+          setHouseholdNeeds(needRes.data as HouseholdNeed[]);
+        } else if (needRes.data && needRes.data.length === 0) {
+          await supabase.from('household_needs').insert(INITIAL_HOUSEHOLD_NEEDS);
+        }
+
+        if (wishRes.data && wishRes.data.length > 0) {
+          setMealWishes(wishRes.data as MealWish[]);
+        }
+
+        if (recipeRes.data && recipeRes.data.length > 0) {
+          setRecipes(recipeRes.data as Recipe[]);
+        }
+      } catch (err) {
+        console.warn('Initial Supabase fetch fallback to local cache:', err);
+      }
+    }
+
+    initSupabaseData();
+
+    // Multi-table Realtime WebSocket
     const channel = supabase
-      .channel('household-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items' }, async () => {
-        const { data } = await supabase.from('shopping_items').select('*').order('created_at', { ascending: false });
-        if (data) setShoppingItems(data as ShoppingItem[]);
+      .channel('family-hub-sync-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newItem = payload.new as ShoppingItem;
+          setShoppingItems((prev) => (prev.some((i) => i.id === newItem.id) ? prev : [newItem, ...prev]));
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as ShoppingItem;
+          setShoppingItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old.id;
+          setShoppingItems((prev) => prev.filter((i) => i.id !== oldId));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newTodo = payload.new as TodoItem;
+          setTodos((prev) => (prev.some((t) => t.id === newTodo.id) ? prev : [newTodo, ...prev]));
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as TodoItem;
+          setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old.id;
+          setTodos((prev) => prev.filter((t) => t.id !== oldId));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendar_events' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newEv = payload.new as CalendarEvent;
+          setCalendarEvents((prev) =>
+            prev.some((e) => e.id === newEv.id)
+              ? prev
+              : [...prev, newEv].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
+          );
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as CalendarEvent;
+          setCalendarEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old.id;
+          setCalendarEvents((prev) => prev.filter((e) => e.id !== oldId));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_plans' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newPlan = payload.new as MealPlan;
+          setMealPlans((prev) => (prev.some((p) => p.id === newPlan.id) ? prev : [...prev, newPlan]));
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as MealPlan;
+          setMealPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old.id;
+          setMealPlans((prev) => prev.filter((p) => p.id !== oldId));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'household_needs' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newNeed = payload.new as HouseholdNeed;
+          setHouseholdNeeds((prev) => (prev.some((n) => n.id === newNeed.id) ? prev : [newNeed, ...prev]));
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as HouseholdNeed;
+          setHouseholdNeeds((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old.id;
+          setHouseholdNeeds((prev) => prev.filter((n) => n.id !== oldId));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meal_wishes' }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          const newWish = payload.new as MealWish;
+          setMealWishes((prev) => (prev.some((w) => w.id === newWish.id) ? prev : [newWish, ...prev]));
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as MealWish;
+          setMealWishes((prev) => prev.map((w) => (w.id === updated.id ? updated : w)));
+        } else if (payload.eventType === 'DELETE') {
+          const oldId = payload.old.id;
+          setMealWishes((prev) => prev.filter((w) => w.id !== oldId));
+        }
       })
       .subscribe();
 
     return () => {
+      isSubscribed = false;
       supabase.removeChannel(channel);
     };
   }, [isLiveSupabase]);
@@ -373,9 +539,12 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  // Smart Merge Shopping Items (combines identical normalized_name + unit if unchecked)
+  // Smart Merge Shopping Items
   const addOrMergeShoppingItems = useCallback(
     (newInputs: AddShoppingInput[]) => {
+      const itemsToInsert: ShoppingItem[] = [];
+      const itemsToUpdate: ShoppingItem[] = [];
+
       setShoppingItems((prev) => {
         const updated = [...prev];
 
@@ -398,14 +567,16 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
                 ? Number((existing.quantity + input.quantity).toFixed(2))
                 : existing.quantity ?? input.quantity ?? null;
 
-            updated[existingIdx] = {
+            const modItem: ShoppingItem = {
               ...existing,
               quantity: combinedQty,
               created_by_member_id: activeMember.id,
             };
+            updated[existingIdx] = modItem;
+            itemsToUpdate.push(modItem);
           } else {
-            updated.unshift({
-              id: `shop-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            const newItem: ShoppingItem = {
+              id: generateId('shop'),
               household_id: household.id,
               name: input.name.trim(),
               normalized_name: norm,
@@ -416,51 +587,109 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
               is_checked: false,
               created_by_member_id: activeMember.id,
               created_at: new Date().toISOString(),
-            });
+            };
+            updated.unshift(newItem);
+            itemsToInsert.push(newItem);
           }
         }
         return updated;
       });
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          if (itemsToInsert.length > 0) {
+            safeDb(supabase.from('shopping_items').insert(itemsToInsert), 'insert shopping_items');
+          }
+          for (const item of itemsToUpdate) {
+            safeDb(
+              supabase.from('shopping_items').update({ quantity: item.quantity }).eq('id', item.id),
+              'update shopping_item'
+            );
+          }
+        }
+      }
     },
-    [activeMember.id, household.id]
+    [activeMember.id, household.id, isLiveSupabase]
   );
 
   const toggleShoppingItem = useCallback((id: string) => {
+    let newChecked = false;
+    let newCheckedAt: string | null = null;
+
     setShoppingItems((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              is_checked: !item.is_checked,
-              checked_at: !item.is_checked ? new Date().toISOString() : null,
-            }
-          : item
-      )
+      prev.map((item) => {
+        if (item.id === id) {
+          newChecked = !item.is_checked;
+          newCheckedAt = newChecked ? new Date().toISOString() : null;
+          return {
+            ...item,
+            is_checked: newChecked,
+            checked_at: newCheckedAt,
+          };
+        }
+        return item;
+      })
     );
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(
+          supabase
+            .from('shopping_items')
+            .update({ is_checked: newChecked, checked_at: newCheckedAt })
+            .eq('id', id),
+          'toggle shopping_item'
+        );
+      }
+    }
+  }, [isLiveSupabase]);
 
   const deleteShoppingItem = useCallback((id: string) => {
     setShoppingItems((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('shopping_items').delete().eq('id', id), 'delete shopping_item');
+      }
+    }
+  }, [isLiveSupabase]);
 
   const clearCheckedShoppingItems = useCallback(() => {
     setShoppingItems((prev) => prev.filter((item) => !item.is_checked));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('shopping_items').delete().eq('is_checked', true), 'clearChecked shopping_items');
+      }
+    }
+  }, [isLiveSupabase]);
 
   // Recipes
   const addRecipe = useCallback(
     (recipeInput: Omit<Recipe, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>): Recipe => {
       const newRecipe: Recipe = {
         ...recipeInput,
-        id: `rec-${Date.now()}`,
+        id: generateId('rec'),
         household_id: household.id,
         created_by_member_id: activeMember.id,
         created_at: new Date().toISOString(),
       };
       setRecipes((prev) => [newRecipe, ...prev]);
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('recipes').insert(newRecipe), 'insert recipe');
+        }
+      }
+
       return newRecipe;
     },
-    [activeMember.id, household.id]
+    [activeMember.id, household.id, isLiveSupabase]
   );
 
   // Meal Wishes
@@ -468,7 +697,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     (title: string, preferred_cooking_method: 'standard' | 'thermomix', notes?: string) => {
       if (!title.trim()) return;
       const newWish: MealWish = {
-        id: `mw-${Date.now()}`,
+        id: generateId('mw'),
         household_id: household.id,
         title: title.trim(),
         notes: notes?.trim() || null,
@@ -478,27 +707,40 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
       };
       setMealWishes((prev) => [newWish, ...prev]);
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('meal_wishes').insert(newWish), 'insert meal_wish');
+        }
+      }
     },
-    [activeMember.id, household.id]
+    [activeMember.id, household.id, isLiveSupabase]
   );
 
   const deleteMealWish = useCallback((id: string) => {
     setMealWishes((prev) => prev.filter((w) => w.id !== id));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('meal_wishes').delete().eq('id', id), 'delete meal_wish');
+      }
+    }
+  }, [isLiveSupabase]);
 
   // Meal Plans + Automatic Calendar Sync (Category: 'meal')
   const addMealPlan = useCallback(
     (planInput: Omit<MealPlan, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>): MealPlan => {
       const newPlan: MealPlan = {
         ...planInput,
-        id: `mp-${Date.now()}`,
+        id: generateId('mp'),
         household_id: household.id,
         created_by_member_id: activeMember.id,
         created_at: new Date().toISOString(),
       };
       setMealPlans((prev) => [...prev, newPlan]);
 
-      // Automatically link MealPlan to Calendar as category 'meal'
       const generatedMealEvents = buildMealCalendarEvents(
         newPlan,
         household.id,
@@ -512,38 +754,51 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         )
       );
 
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('meal_plans').insert(newPlan), 'insert meal_plan');
+          safeDb(supabase.from('calendar_events').insert(generatedMealEvents), 'insert meal calendar_events');
+        }
+      }
+
       return newPlan;
     },
-    [activeMember.id, household.id, nonKioskMemberIds]
+    [activeMember.id, household.id, isLiveSupabase, nonKioskMemberIds]
   );
 
   const updateMealPlanPortions = useCallback(
     (planId: string, newPortions: number) => {
       const clamped = Math.max(1, Math.min(12, newPortions));
-      let updatedTargetPlan: MealPlan | null = null;
+      let notesToSave: string | undefined = undefined;
+      let targetTitle = '';
+      let targetSlot: MealSlotType = 'dinner';
+      let targetNextDayLunch = false;
 
       setMealPlans((prev) =>
         prev.map((p) => {
           if (p.id === planId) {
-            updatedTargetPlan = {
+            targetTitle = p.custom_title;
+            targetSlot = p.slot_type;
+            targetNextDayLunch = p.includes_next_day_lunch;
+            notesToSave = p.includes_next_day_lunch
+              ? `${clamped} Portionen (inkl. Mittagessen am nächsten Tag zum Aufwärmen)`
+              : `${clamped} Portionen`;
+            return {
               ...p,
               portions: clamped,
-              notes: p.includes_next_day_lunch
-                ? `${clamped} Portionen (inkl. Mittagessen am nächsten Tag zum Aufwärmen)`
-                : `${clamped} Portionen`,
+              notes: notesToSave,
             };
-            return updatedTargetPlan;
           }
           return p;
         })
       );
 
-      // Update linked calendar entries with new portion size
       setCalendarEvents((prev) =>
         prev.map((ev) => {
           if (ev.source_meal_plan_id !== planId) return ev;
           const isWarmup = ev.id.endsWith('-warmup') || ev.title.includes('Aufwärmen');
-          const baseTitle = updatedTargetPlan?.custom_title || ev.title;
+          const baseTitle = targetTitle || ev.title;
           if (isWarmup) {
             return {
               ...ev,
@@ -553,35 +808,51 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
               updated_at: new Date().toISOString(),
             };
           }
-          const slotLabel = updatedTargetPlan?.slot_type === 'lunch' ? 'Mittagessen' : 'Abendessen';
+          const slotLabel = targetSlot === 'lunch' ? 'Mittagessen' : 'Abendessen';
           return {
             ...ev,
             title: `🍽️ ${slotLabel}: ${baseTitle} (${clamped} Portionen)`,
             description: `Essensplan • ${clamped} Portionen${
-              updatedTargetPlan?.includes_next_day_lunch
-                ? ' (inkl. Mittagessen am Folgetag zum Aufwärmen)'
-                : ''
+              targetNextDayLunch ? ' (inkl. Mittagessen am Folgetag zum Aufwärmen)' : ''
             }`,
             sync_status: 'pending',
             updated_at: new Date().toISOString(),
           };
         })
       );
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(
+            supabase.from('meal_plans').update({ portions: clamped, notes: notesToSave }).eq('id', planId),
+            'update meal_plan portions'
+          );
+        }
+      }
     },
-    []
+    [isLiveSupabase]
   );
 
   const deleteMealPlan = useCallback((id: string) => {
     setMealPlans((prev) => prev.filter((p) => p.id !== id));
     setCalendarEvents((prev) => prev.filter((e) => e.source_meal_plan_id !== id));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('meal_plans').delete().eq('id', id), 'delete meal_plan');
+        safeDb(supabase.from('calendar_events').delete().eq('source_meal_plan_id', id), 'delete linked calendar_events');
+      }
+    }
+  }, [isLiveSupabase]);
 
   // Calendar Events
   const addCalendarEvent = useCallback(
     (eventInput: Omit<CalendarEvent, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>): CalendarEvent => {
       const newEvent: CalendarEvent = {
         ...eventInput,
-        id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: generateId('ev'),
         household_id: household.id,
         sync_status: eventInput.sync_status || 'pending',
         created_by_member_id: activeMember.id,
@@ -591,14 +862,29 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       setCalendarEvents((prev) =>
         [...prev, newEvent].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())
       );
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('calendar_events').insert(newEvent), 'insert calendar_event');
+        }
+      }
+
       return newEvent;
     },
-    [activeMember.id, household.id]
+    [activeMember.id, household.id, isLiveSupabase]
   );
 
   const deleteCalendarEvent = useCallback((id: string) => {
     setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('calendar_events').delete().eq('id', id), 'delete calendar_event');
+      }
+    }
+  }, [isLiveSupabase]);
 
   // ToDo Categories & ToDos (with Automatic Calendar Deadline Sync)
   const addTodoCategory = useCallback(
@@ -614,7 +900,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       if (existing) return existing;
 
       const newCat: TodoCategory = {
-        id: `tcat-${Date.now()}`,
+        id: generateId('tcat'),
         household_id: household.id,
         slug,
         name: name.trim(),
@@ -630,7 +916,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   const addTodo = useCallback(
     (input: AddTodoInput): TodoItem => {
       const newTodo: TodoItem = {
-        id: `todo-${Date.now()}`,
+        id: generateId('todo'),
         household_id: household.id,
         title: input.title.trim(),
         notes: input.notes?.trim() || null,
@@ -645,7 +931,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
       setTodos((prev) => [newTodo, ...prev]);
 
-      // If ToDo has a deadline, automatically create a CalendarEvent in category 'todo'
+      let deadlineEvent: CalendarEvent | null = null;
       if (newTodo.due_date) {
         const catObj = todoCategories.find((c) => c.slug === newTodo.category_slug);
         const catLabel = catObj ? catObj.name : 'ToDo';
@@ -653,7 +939,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           ? [newTodo.assigned_member_id]
           : adultMemberIds;
 
-        const deadlineEvent: CalendarEvent = {
+        deadlineEvent = {
           id: `ev-todo-${newTodo.id}`,
           household_id: household.id,
           title: `📌 Deadline [${catLabel}]: ${newTodo.title}`,
@@ -678,34 +964,48 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         };
 
         setCalendarEvents((prev) =>
-          [...prev, deadlineEvent].sort(
+          [...prev, deadlineEvent!].sort(
             (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
           )
         );
       }
 
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('todos').insert(newTodo), 'insert todo');
+          if (deadlineEvent) {
+            safeDb(supabase.from('calendar_events').insert(deadlineEvent), 'insert todo deadline event');
+          }
+        }
+      }
+
       return newTodo;
     },
-    [activeMember.id, adultMemberIds, household.id, todoCategories]
+    [activeMember.id, adultMemberIds, household.id, isLiveSupabase, todoCategories]
   );
 
   const toggleTodoCompleted = useCallback(
     (id: string) => {
       let nowCompleted = false;
+      let completedAt: string | null = null;
+      let completedBy: string | null = null;
+
       setTodos((prev) =>
         prev.map((t) => {
           if (t.id !== id) return t;
           nowCompleted = !t.is_completed;
+          completedAt = nowCompleted ? new Date().toISOString() : null;
+          completedBy = nowCompleted ? activeMember.id : null;
           return {
             ...t,
             is_completed: nowCompleted,
-            completed_by_member_id: nowCompleted ? activeMember.id : null,
-            completed_at: nowCompleted ? new Date().toISOString() : null,
+            completed_by_member_id: completedBy,
+            completed_at: completedAt,
           };
         })
       );
 
-      // Update linked deadline in Calendar
       setCalendarEvents((prev) =>
         prev.map((ev) => {
           if (ev.source_todo_id !== id) return ev;
@@ -718,8 +1018,25 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           };
         })
       );
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(
+            supabase
+              .from('todos')
+              .update({
+                is_completed: nowCompleted,
+                completed_by_member_id: completedBy,
+                completed_at: completedAt,
+              })
+              .eq('id', id),
+            'toggle todo'
+          );
+        }
+      }
     },
-    [activeMember.id]
+    [activeMember.id, isLiveSupabase]
   );
 
   const claimTodo = useCallback(
@@ -739,14 +1056,32 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           };
         })
       );
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(
+            supabase.from('todos').update({ assigned_member_id: memberId }).eq('id', id),
+            'claim todo'
+          );
+        }
+      }
     },
-    [adultMemberIds]
+    [adultMemberIds, isLiveSupabase]
   );
 
   const deleteTodo = useCallback((id: string) => {
     setTodos((prev) => prev.filter((t) => t.id !== id));
     setCalendarEvents((prev) => prev.filter((ev) => ev.source_todo_id !== id));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('todos').delete().eq('id', id), 'delete todo');
+        safeDb(supabase.from('calendar_events').delete().eq('source_todo_id', id), 'delete todo deadline event');
+      }
+    }
+  }, [isLiveSupabase]);
 
   // Bidirectional Google Calendar Sync
   const updateGoogleSyncConfig = useCallback((partial: Partial<GoogleSyncConfig>) => {
@@ -801,7 +1136,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [calendarEvents, googleSyncConfig, members]);
 
-  // Household Needs (Galaxus)
+  // Household Needs (Bedarf)
   const addHouseholdNeed = useCallback(
     (needInput: {
       title: string;
@@ -813,7 +1148,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     }) => {
       if (!needInput.title.trim()) return;
       const newNeed: HouseholdNeed = {
-        id: `need-${Date.now()}`,
+        id: generateId('need'),
         household_id: household.id,
         title: needInput.title.trim(),
         product_url: needInput.product_url || null,
@@ -826,27 +1161,60 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
       };
       setHouseholdNeeds((prev) => [newNeed, ...prev]);
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('household_needs').insert(newNeed), 'insert household_need');
+        }
+      }
     },
-    [activeMember.id, household.id]
+    [activeMember.id, household.id, isLiveSupabase]
   );
 
   const toggleHouseholdNeedPurchased = useCallback((id: string) => {
+    let newPurchased = false;
+    let newPurchasedAt: string | null = null;
+
     setHouseholdNeeds((prev) =>
-      prev.map((n) =>
-        n.id === id
-          ? {
-              ...n,
-              is_purchased: !n.is_purchased,
-              purchased_at: !n.is_purchased ? new Date().toISOString() : null,
-            }
-          : n
-      )
+      prev.map((n) => {
+        if (n.id === id) {
+          newPurchased = !n.is_purchased;
+          newPurchasedAt = newPurchased ? new Date().toISOString() : null;
+          return {
+            ...n,
+            is_purchased: newPurchased,
+            purchased_at: newPurchasedAt,
+          };
+        }
+        return n;
+      })
     );
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(
+          supabase
+            .from('household_needs')
+            .update({ is_purchased: newPurchased, purchased_at: newPurchasedAt })
+            .eq('id', id),
+          'toggle household_need'
+        );
+      }
+    }
+  }, [isLiveSupabase]);
 
   const deleteHouseholdNeed = useCallback((id: string) => {
     setHouseholdNeeds((prev) => prev.filter((n) => n.id !== id));
-  }, []);
+
+    if (isLiveSupabase) {
+      const supabase = createClient();
+      if (supabase) {
+        safeDb(supabase.from('household_needs').delete().eq('id', id), 'delete household_need');
+      }
+    }
+  }, [isLiveSupabase]);
 
   const updateMemberColor = useCallback((memberId: string, colorHex: string) => {
     setMembers((prev) => prev.map((m) => (m.id === memberId ? { ...m, color_hex: colorHex } : m)));
