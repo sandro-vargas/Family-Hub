@@ -52,15 +52,15 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <div className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90">
-        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#74956C]/15 text-[#74956C]">
-          HAUSHALTS-KONFIGURATION
-        </span>
-        <h1 className="text-2xl font-extrabold text-[#1E293B] mt-1 flex items-center gap-2">
-          <Settings className="h-6 w-6 text-[#5CA6CE]" />
+    <div className="space-y-4 max-w-4xl">
+      <div className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-200/90 flex items-center justify-between gap-2">
+        <h1 className="text-base sm:text-lg font-extrabold text-[#1E293B] flex items-center gap-2">
+          <Settings className="h-5 w-5 text-[#5CA6CE]" />
           Einstellungen, Profile & Google Kalender Sync
         </h1>
+        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#74956C]/15 text-[#74956C]">
+          Setup
+        </span>
       </div>
 
       {/* Bidirectional Google Calendar Synchronization */}

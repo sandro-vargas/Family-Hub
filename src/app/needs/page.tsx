@@ -1,24 +1,47 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   PackagePlus,
   ExternalLink,
   Check,
   Trash2,
-  Share2,
   Sparkles,
   Link2,
-  ShoppingBag,
+  Pencil,
+  X,
+  ArrowDownWideNarrow,
 } from 'lucide-react';
 import { useFamily } from '@/context/family-context';
 import { CreatorBadge } from '@/components/creator-badge';
-import { NeedPriority } from '@/types/family';
+import { HouseholdNeed, NeedPriority } from '@/types/family';
+
+const PRIORITY_META: Record<
+  NeedPriority,
+  { label: string; rank: number; badgeClass: string }
+> = {
+  high: {
+    label: '🔥 Hoch / Dringend',
+    rank: 3,
+    badgeClass: 'bg-rose-100 text-rose-800 border-rose-200',
+  },
+  normal: {
+    label: '⚡ Normal',
+    rank: 2,
+    badgeClass: 'bg-[#5CA6CE]/15 text-[#2d7ba4] border-[#5CA6CE]/30',
+  },
+  low: {
+    label: '🌱 Niedrig / Später',
+    rank: 1,
+    badgeClass: 'bg-slate-100 text-slate-600 border-slate-200',
+  },
+};
 
 export default function HouseholdNeedsPage() {
   const {
     householdNeeds,
     addHouseholdNeed,
+    updateHouseholdNeed,
     toggleHouseholdNeedPurchased,
     deleteHouseholdNeed,
   } = useFamily();
@@ -27,6 +50,12 @@ export default function HouseholdNeedsPage() {
   const [notesInput, setNotesInput] = useState('');
   const [priorityInput, setPriorityInput] = useState<NeedPriority>('normal');
   const [isLoadingMeta, setIsLoadingMeta] = useState(false);
+
+  // Edit State
+  const [editingNeedId, setEditingNeedId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editPriority, setEditPriority] = useState<NeedPriority>('normal');
 
   const handleAddNeed = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,53 +105,66 @@ export default function HouseholdNeedsPage() {
     setPriorityInput('normal');
   };
 
-  const openNeeds = householdNeeds.filter((n) => !n.is_purchased);
-  const purchasedNeeds = householdNeeds.filter((n) => n.is_purchased);
+  const handleStartEdit = (need: HouseholdNeed) => {
+    setEditingNeedId(need.id);
+    setEditTitle(need.title);
+    setEditNotes(need.notes || '');
+    setEditPriority(need.priority);
+  };
+
+  const handleSaveEdit = (id: string) => {
+    if (!editTitle.trim()) return;
+    updateHouseholdNeed(id, {
+      title: editTitle.trim(),
+      notes: editNotes.trim() || null,
+      priority: editPriority,
+    });
+    setEditingNeedId(null);
+  };
+
+  // Sorted descending by priority (high -> normal -> low)
+  const openNeeds = useMemo(() => {
+    return householdNeeds
+      .filter((n) => !n.is_purchased)
+      .sort((a, b) => PRIORITY_META[b.priority].rank - PRIORITY_META[a.priority].rank);
+  }, [householdNeeds]);
+
+  const purchasedNeeds = useMemo(
+    () => householdNeeds.filter((n) => n.is_purchased),
+    [householdNeeds]
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#5CA6CE]/15 text-[#2d7ba4]">
-              HAUSHALT, FAMILIE & ONLINE-BESTELLUNGEN
-            </span>
-            <span className="text-xs font-medium text-slate-500">
-              Freitext oder Link einfügen (z.B. Galaxus, Microspot, etc.)
-            </span>
-          </div>
-          <h1 className="text-2xl font-extrabold text-[#1E293B] mt-1 flex items-center gap-2">
-            <PackagePlus className="h-6 w-6 text-[#74956C]" />
-            Bedarf & Haushaltsartikel
+    <div className="space-y-4">
+      {/* Compact Header */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-200/90 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <PackagePlus className="h-5 w-5 text-[#74956C]" />
+          <h1 className="text-base sm:text-lg font-extrabold text-[#1E293B]">
+            Bedarf & Haushaltsartikel ({openNeeds.length})
           </h1>
         </div>
-
-        <div className="bg-[#F4F7F5] px-4 py-2.5 rounded-xl border border-slate-200 flex items-center gap-2.5 text-xs text-slate-600">
-          <Share2 className="h-4 w-4 text-[#5CA6CE] shrink-0" />
-          <span>
-            <strong>Smartphone Tipp:</strong> In Online-Shops (wie Galaxus) auf <em>Teilen → Family Hub</em> tippen!
-          </span>
-        </div>
+        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500">
+          <ArrowDownWideNarrow className="h-3.5 w-3.5 text-[#74956C]" />
+          Listenansicht • Sortiert nach Priorität absteigend
+        </span>
       </div>
 
-      {/* Add Form (Galaxus URL or Free Text) */}
+      {/* Add Form */}
       <form
         onSubmit={handleAddNeed}
-        className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 space-y-3"
+        className="bg-white p-3.5 sm:p-4 rounded-2xl shadow-xs border border-slate-200/90"
       >
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          <div className="md:col-span-6 relative">
-            <div className="flex items-center">
-              <Link2 className="h-4 w-4 text-slate-400 absolute left-3.5" />
-              <input
-                type="text"
-                value={urlOrTitleInput}
-                onChange={(e) => setUrlOrTitleInput(e.target.value)}
-                placeholder="Artikelname oder Shop-Link (z.B. Glühbirne E27, Galaxus-Link, Spielzeug)..."
-                className="w-full rounded-xl border border-slate-300 bg-white pl-10 pr-4 py-2.5 text-sm text-[#1E293B] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#74956C]"
-              />
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+          <div className="md:col-span-5 relative flex items-center">
+            <Link2 className="h-4 w-4 text-slate-400 absolute left-3" />
+            <input
+              type="text"
+              value={urlOrTitleInput}
+              onChange={(e) => setUrlOrTitleInput(e.target.value)}
+              placeholder="Artikelname oder Shop-Link (z.B. Glühbirne E27, Galaxus-Link)..."
+              className="w-full rounded-xl border border-slate-300 bg-white pl-9 pr-3 py-2 text-sm text-[#1E293B] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#74956C]"
+            />
           </div>
 
           <div className="md:col-span-3">
@@ -131,19 +173,19 @@ export default function HouseholdNeedsPage() {
               value={notesInput}
               onChange={(e) => setNotesInput(e.target.value)}
               placeholder="Notiz (z.B. für Bad oben)"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-[#1E293B] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#74956C]"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-[#1E293B] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#74956C]"
             />
           </div>
 
-          <div className="md:col-span-1">
+          <div className="md:col-span-2">
             <select
               value={priorityInput}
               onChange={(e) => setPriorityInput(e.target.value as NeedPriority)}
-              className="w-full rounded-xl border border-slate-300 px-2 py-2.5 text-sm text-[#1E293B] bg-white font-semibold"
+              className="w-full rounded-xl border border-slate-300 px-2.5 py-2 text-sm text-[#1E293B] bg-white font-bold"
             >
-              <option value="normal">Normal</option>
-              <option value="high">Dringend</option>
-              <option value="low">Später</option>
+              <option value="high">🔥 Hoch</option>
+              <option value="normal">⚡ Normal</option>
+              <option value="low">🌱 Niedrig</option>
             </select>
           </div>
 
@@ -151,100 +193,151 @@ export default function HouseholdNeedsPage() {
             <button
               type="submit"
               disabled={isLoadingMeta}
-              className="w-full h-full min-h-[42px] inline-flex items-center justify-center gap-2 rounded-xl bg-[#74956C] hover:bg-[#618059] text-white font-bold text-xs px-4 py-2.5 shadow-xs transition-colors"
+              className="w-full h-full min-h-[38px] inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#74956C] hover:bg-[#618059] text-white font-bold text-xs sm:text-sm px-3.5 py-2 shadow-xs transition-colors"
             >
               <Sparkles className="h-4 w-4" />
-              {isLoadingMeta ? 'Lese Galaxus...' : 'Hinzufügen'}
+              {isLoadingMeta ? 'Lädt...' : 'Hinzufügen'}
             </button>
           </div>
         </div>
       </form>
 
-      {/* Product Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {openNeeds.map((need) => (
-          <div
-            key={need.id}
-            className="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden flex flex-col justify-between"
-          >
-            <div>
-              {need.image_url ? (
-                <div className="h-40 bg-[#F4F7F5] relative overflow-hidden border-b border-slate-100 flex items-center justify-center p-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={need.image_url}
-                    alt={need.title}
-                    className="max-h-full max-w-full object-contain rounded-lg"
-                  />
-                  {need.priority === 'high' && (
-                    <span className="absolute top-3 left-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#5CA6CE] text-white shadow-2xs">
-                      Dringend
-                    </span>
-                  )}
-                  {need.merchant && (
-                    <span className="absolute top-3 right-3 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#74956C] text-white">
-                      {need.merchant}
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="h-24 bg-[#F4F7F5] border-b border-slate-100 flex items-center justify-between px-4">
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <ShoppingBag className="h-6 w-6 text-[#74956C]" />
-                    <span className="text-xs font-bold uppercase">
-                      {need.merchant || 'Haushaltsartikel'}
-                    </span>
-                  </div>
-                  {need.priority === 'high' && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#5CA6CE] text-white">
-                      Dringend
-                    </span>
-                  )}
-                </div>
-              )}
-
-              <div className="p-4 space-y-2">
-                <h3 className="font-bold text-sm text-[#1E293B] leading-snug">{need.title}</h3>
-                {need.notes && <p className="text-xs text-slate-600">{need.notes}</p>}
-              </div>
-            </div>
-
-            <div className="px-4 py-3 bg-[#F4F7F5] border-t border-slate-100 flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <CreatorBadge memberId={need.created_by_member_id} />
-                {need.product_url && (
-                  <a
-                    href={need.product_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-bold text-[#5CA6CE] hover:underline"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    Galaxus
-                  </a>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => toggleHouseholdNeedPurchased(need.id)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#74956C] text-white text-xs font-bold hover:bg-[#618059]"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  Besorgt
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteHouseholdNeed(need.id)}
-                  className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+      {/* Clean List View (Listenansicht, sortiert nach Priorität absteigend) */}
+      <div className="bg-white rounded-2xl shadow-xs border border-slate-200/90 overflow-hidden">
+        {openNeeds.length === 0 ? (
+          <div className="p-8 text-center text-xs sm:text-sm text-slate-500 font-semibold">
+            Aktuell keine offenen Bedarfsartikel vorhanden.
           </div>
-        ))}
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {openNeeds.map((need) => {
+              const prio = PRIORITY_META[need.priority] || PRIORITY_META.normal;
+              const isEditing = editingNeedId === need.id;
+
+              if (isEditing) {
+                return (
+                  <li key={need.id} className="p-4 bg-[#F4F7F5] space-y-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                      <input
+                        type="text"
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        placeholder="Titel"
+                        className="sm:col-span-5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs sm:text-sm font-bold text-[#1E293B]"
+                      />
+                      <input
+                        type="text"
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Notiz"
+                        className="sm:col-span-4 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs sm:text-sm text-[#1E293B]"
+                      />
+                      <select
+                        value={editPriority}
+                        onChange={(e) => setEditPriority(e.target.value as NeedPriority)}
+                        className="sm:col-span-3 rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-[#1E293B]"
+                      >
+                        <option value="high">🔥 Hoch / Dringend</option>
+                        <option value="normal">⚡ Normal</option>
+                        <option value="low">🌱 Niedrig / Später</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditingNeedId(null)}
+                        className="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1"
+                      >
+                        <X className="h-3.5 w-3.5" /> Abbrechen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveEdit(need.id)}
+                        className="px-3 py-1 rounded-lg bg-[#74956C] text-white text-xs font-bold flex items-center gap-1"
+                      >
+                        <Check className="h-3.5 w-3.5" /> Speichern
+                      </button>
+                    </div>
+                  </li>
+                );
+              }
+
+              return (
+                <li
+                  key={need.id}
+                  className="px-4 py-3 hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                >
+                  <div className="flex items-start gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleHouseholdNeedPurchased(need.id)}
+                      className="mt-0.5 h-5 w-5 rounded-lg border-2 border-[#74956C] bg-white hover:bg-[#74956C]/15 flex items-center justify-center shrink-0"
+                      title="Als besorgt markieren"
+                    />
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${prio.badgeClass}`}
+                        >
+                          {prio.label}
+                        </span>
+                        {need.merchant && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#74956C]/15 text-[#4d6847]">
+                            {need.merchant}
+                          </span>
+                        )}
+                        <CreatorBadge memberId={need.created_by_member_id} showName={false} />
+                      </div>
+
+                      <p className="font-extrabold text-sm text-[#1E293B]">{need.title}</p>
+                      {need.notes && (
+                        <p className="text-xs text-slate-600">{need.notes}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    {need.product_url && (
+                      <a
+                        href={need.product_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#5CA6CE]/15 text-[#2d7ba4] hover:bg-[#5CA6CE] hover:text-white text-xs font-bold transition-colors"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Link
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleStartEdit(need)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-[#5CA6CE] hover:bg-sky-50"
+                      title="Bearbeiten (Titel, Notiz, Priorität)"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleHouseholdNeedPurchased(need.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#74956C] text-white text-xs font-bold hover:bg-[#618059]"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Besorgt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteHouseholdNeed(need.id)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg"
+                      title="Löschen"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
 
       {/* Purchased Items Archive */}

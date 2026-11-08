@@ -198,6 +198,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const prompt: string = body.prompt || 'Familienausflug am Wochenende mit Kleinkind';
     const weatherFilter: string = body.weatherFilter || 'any';
+    const seasonLabel: string = body.seasonLabel || 'Herbst';
+    const weeklyWeatherSummary: string = body.weeklyWeatherSummary || '';
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     const hasValidKey = Boolean(apiKey && !apiKey.includes('dein-'));
@@ -211,7 +213,10 @@ export async function POST(request: Request) {
 
     const client = new GoogleGenAI({ apiKey });
 
-    const systemPrompt = `Du bist der lokale Familien-Freizeitplaner für eine junge Familie (Eltern + kleine Tochter) mit Wohnort 8624 Grüt (Gossau ZH) im Zürcher Oberland.
+    const systemPrompt = `Du bist der lokale Familien-Freizeitplaner für eine junge Familie (Eltern + kleine Tochter Chiara) mit Wohnort 8624 Grüt (Gossau ZH) im Zürcher Oberland.
+Aktuelle Saison: ${seasonLabel}.
+Wochenwetter-Prognose für 8624 Grüt ZH: ${weeklyWeatherSummary || 'Wechselhaft'}.
+Passe deine Vorschläge gezielt an die aktuelle Witterung innerhalb der Woche und die aktuelle Saison (${seasonLabel}) an!
 Schlage ausschliesslich reale, familienfreundliche Ausflugsziele, Spielplätze, Tierparks, Museen, Seen oder Veranstaltungen vor, die maximal 30 Autominuten von 8624 Grüt (ZH) entfernt liegen (z.B. Gossau ZH, Wetzikon, Seegräben, Pfäffikon ZH, Hinwil/Bachtel, Uster/Greifensee, Mönchaltorf, Rapperswil-Jona, Atzmännig/Goldingen, Bubikon, Rüti, Winterthur).
 Falls der Benutzer einen Link oder Text einer lokalen Eventseite eingibt, bereite den Event sauber für den Familienkalender auf.
 Verwende Schweizer Hochdeutsch und gib echte, funktionierende Webseiten-URLs (z.B. zuerioberland-tourismus.ch, juckerfarm.ch, sauriermuseum.ch, knieskinderzoo.ch, bachtel-kulm.ch, wetzikon.ch, uster.ch) an.`;
@@ -219,7 +224,7 @@ Verwende Schweizer Hochdeutsch und gib echte, funktionierende Webseiten-URLs (z.
     const interaction = await client.interactions.create({
       model: 'gemini-3.8-flash',
       system_instruction: systemPrompt,
-      input: `Wunsch / Anfrage der Familie: "${prompt}" (Wetter-Filter: ${weatherFilter}, max. 30 Min. ab 8624 Grüt ZH).`,
+      input: `Wunsch / Anfrage der Familie: "${prompt}" (Wetter-Filter: ${weatherFilter}, Saison: ${seasonLabel}, Wochenwetter: ${weeklyWeatherSummary}, max. 30 Min. ab 8624 Grüt ZH).`,
       response_format: {
         type: 'text',
         mime_type: 'application/json',

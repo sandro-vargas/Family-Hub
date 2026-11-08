@@ -78,6 +78,10 @@ interface FamilyContextValue {
   reorderCategories: (orderedIds: string[]) => void;
   shoppingItems: ShoppingItem[];
   addOrMergeShoppingItems: (items: AddShoppingInput[]) => void;
+  updateShoppingItem: (
+    id: string,
+    updates: Partial<Pick<ShoppingItem, 'name' | 'quantity' | 'unit' | 'store_category_slug'>>
+  ) => void;
   toggleShoppingItem: (id: string) => void;
   deleteShoppingItem: (id: string) => void;
   clearCheckedShoppingItems: () => void;
@@ -85,11 +89,19 @@ interface FamilyContextValue {
   // Meals, Wishes & Recipes
   recipes: Recipe[];
   addRecipe: (recipe: Omit<Recipe, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>) => Recipe;
+  updateRecipe: (
+    id: string,
+    updates: Partial<Omit<Recipe, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>>
+  ) => void;
   mealWishes: MealWish[];
   addMealWish: (title: string, preferred_cooking_method: 'standard' | 'thermomix', notes?: string) => void;
   deleteMealWish: (id: string) => void;
   mealPlans: MealPlan[];
   addMealPlan: (plan: Omit<MealPlan, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>) => MealPlan;
+  updateMealPlan: (
+    id: string,
+    updates: Partial<Pick<MealPlan, 'planned_date' | 'slot_type' | 'custom_title' | 'portions' | 'cooking_method' | 'notes' | 'includes_next_day_lunch'>>
+  ) => void;
   updateMealPlanPortions: (planId: string, portions: number) => void;
   deleteMealPlan: (id: string) => void;
 
@@ -107,6 +119,10 @@ interface FamilyContextValue {
   addTodoCategory: (name: string, colorHex?: string) => TodoCategory;
   todos: TodoItem[];
   addTodo: (input: AddTodoInput) => TodoItem;
+  updateTodo: (
+    id: string,
+    updates: Partial<Pick<TodoItem, 'title' | 'notes' | 'category_slug' | 'priority' | 'assigned_member_id' | 'due_date'>>
+  ) => void;
   toggleTodoCompleted: (id: string) => void;
   claimTodo: (id: string, memberId: string | null) => void;
   deleteTodo: (id: string) => void;
@@ -124,6 +140,10 @@ interface FamilyContextValue {
     notes?: string | null;
     priority?: NeedPriority;
   }) => void;
+  updateHouseholdNeed: (
+    id: string,
+    updates: Partial<Pick<HouseholdNeed, 'title' | 'notes' | 'priority' | 'product_url' | 'merchant'>>
+  ) => void;
   toggleHouseholdNeedPurchased: (id: string) => void;
   deleteHouseholdNeed: (id: string) => void;
 
@@ -158,6 +178,73 @@ export function normalizeIngredientName(raw: string): string {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .replace(/^bio\s+/i, '');
+}
+
+export function detectStoreCategorySlug(rawName: string): string {
+  const n = rawName.trim().toLowerCase();
+  if (!n) return 'other';
+
+  if (
+    /(rüebli|karotte|apfel|äpfel|banane|tomate|gurke|salat|zwiebel|knoblauch|kartoffel|herdöpfel|zucchetti|zucchini|peperoni|paprika|brokkoli|blumenkohl|spinat|pilz|champignon|avocado|zitrone|limette|orange|mandarine|beere|erdbeere|himbeere|heidelbeere|traube|birne|mango|ananas|melone|kohl|lauch|sellerie|ingwer|kräuter|petersilie|basilikum|schnittlauch|koriander|obst|gemüse|früchte)/.test(
+      n
+    )
+  ) {
+    return 'produce';
+  }
+  if (
+    /(brot|brötli|gipfeli|zopf|weggli|semmel|baguette|toast|tortilla|wrap|fladenbrot|pita|croissant|kuchen|gebäck|laugen|bürli|knäckebrot)/.test(
+      n
+    )
+  ) {
+    return 'bakery';
+  }
+  if (
+    /(poulet|hähnchen|huhn|rind|schwein|kalb|hackfleisch|geschnetzeltes|steak|filet|wurst|bratwurst|cervelat|schinken|speck|salami|aufschnitt|lachs|forelle|thunfisch|fisch|crevetten|garnelen|tofu|seitan|tempeh|vegi|schnitzel|fleisch)/.test(
+      n
+    )
+  ) {
+    return 'meat_fish';
+  }
+  if (
+    /(milch|käse|parmesan|mozzarella|gruyere|emmentaler|raclette|fondue|butter|bratbutter|rahm|vollrahm|halbrahm|sahne|joghurt|yogurt|quark|mascarpone|ricotta|frischkäse|hüttenkäse|crème fraîche|creme fraiche|ei|eier|hafermilch|sojamilch|margarine)/.test(
+      n
+    )
+  ) {
+    return 'dairy_eggs';
+  }
+  if (/(tiefkühl|tk-|glace|eiscreme|fischstäbli|tk\s|pommes)/.test(n)) {
+    return 'frozen';
+  }
+  if (
+    /(salz|pfeffer|paprikapulver|curry|oregano|zimt|muskat|bouillon|gemüsebouillon|hühnerbouillon|rindsbouillon|öl|olivenöl|rapsöl|sonnenblumenöl|essig|balsamico|senf|mayonnaise|ketchup|sojasauce|backpulver|hefe|vanillezucker|zucker|puderzucker|gewürz)/.test(
+      n
+    )
+  ) {
+    return 'spices_oils';
+  }
+  if (
+    /(pasta|spaghetti|penne|teigwaren|nudeln|hörnli|lasagne|reis|risotto|risottoreis|basmatireis|mehl|haferflocken|müesli|cornflakes|linsen|kichererbsen|bohnen|mais|passata|pelati|tomatenmark|pesto|kokosmilch|konfitüre|marmelade|honig|nutella|schokolade|schoggi|chips|nüsse|mandeln|cracker|reiswaffeln|passierte)/.test(
+      n
+    )
+  ) {
+    return 'pantry';
+  }
+  if (
+    /(wasser|mineralwasser|saft|orangensaft|apfelsaft|schorle|cola|rivella|eistee|kaffee|kaffeekapseln|tee|bier|wein|weisswein|rotwein|prosecco|sirup|getränk)/.test(
+      n
+    )
+  ) {
+    return 'beverages';
+  }
+  if (
+    /(wc-papier|toilettenpapier|haushaltspapier|küchenrolle|spülmittel|abwaschmittel|tabs|geschirrspül|waschmittel|weichspüler|putzmittel|kehrichtsäcke|müllsäcke|alufolie|backpapier|frischhaltefolie|seife|duschgel|shampoo|zahnpasta|zahnbürste|deo|creme|windeln|feuchttücher|taschentücher)/.test(
+      n
+    )
+  ) {
+    return 'household_care';
+  }
+
+  return 'other';
 }
 
 function getNextDayIso(dateIso: string): string {
@@ -575,6 +662,11 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
             updated[existingIdx] = modItem;
             itemsToUpdate.push(modItem);
           } else {
+            const autoCat =
+              input.store_category_slug && input.store_category_slug !== 'auto'
+                ? input.store_category_slug
+                : detectStoreCategorySlug(input.name);
+
             const newItem: ShoppingItem = {
               id: generateId('shop'),
               household_id: household.id,
@@ -582,7 +674,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
               normalized_name: norm,
               quantity: input.quantity ?? null,
               unit: input.unit ?? null,
-              store_category_slug: input.store_category_slug || 'other',
+              store_category_slug: autoCat,
               source_meal_plan_id: input.source_meal_plan_id ?? null,
               is_checked: false,
               created_by_member_id: activeMember.id,
@@ -611,6 +703,34 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [activeMember.id, household.id, isLiveSupabase]
+  );
+
+  const updateShoppingItem = useCallback(
+    (
+      id: string,
+      updates: Partial<Pick<ShoppingItem, 'name' | 'quantity' | 'unit' | 'store_category_slug'>>
+    ) => {
+      const dbUpdates: Record<string, any> = { ...updates };
+      if (updates.name !== undefined) {
+        dbUpdates.name = updates.name.trim();
+        dbUpdates.normalized_name = normalizeIngredientName(updates.name);
+      }
+
+      setShoppingItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...dbUpdates } : item))
+      );
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(
+            supabase.from('shopping_items').update(dbUpdates).eq('id', id),
+            'update shopping_item fields'
+          );
+        }
+      }
+    },
+    [isLiveSupabase]
   );
 
   const toggleShoppingItem = useCallback((id: string) => {
@@ -692,6 +812,23 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     [activeMember.id, household.id, isLiveSupabase]
   );
 
+  const updateRecipe = useCallback(
+    (
+      id: string,
+      updates: Partial<Omit<Recipe, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>>
+    ) => {
+      setRecipes((prev) => prev.map((r) => (r.id === id ? { ...r, ...updates } : r)));
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('recipes').update(updates).eq('id', id), 'update recipe');
+        }
+      }
+    },
+    [isLiveSupabase]
+  );
+
   // Meal Wishes
   const addMealWish = useCallback(
     (title: string, preferred_cooking_method: 'standard' | 'thermomix', notes?: string) => {
@@ -729,7 +866,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isLiveSupabase]);
 
-  // Meal Plans + Automatic Calendar Sync (Category: 'meal')
+  // Meal Plans + Automatic Calendar Sync (Category: 'meal') + Auto-Remove from Meal Wishes
   const addMealPlan = useCallback(
     (planInput: Omit<MealPlan, 'id' | 'household_id' | 'created_at' | 'created_by_member_id'>): MealPlan => {
       const newPlan: MealPlan = {
@@ -740,6 +877,21 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         created_at: new Date().toISOString(),
       };
       setMealPlans((prev) => [...prev, newPlan]);
+
+      // Automatically remove matching wish from mealWishes when scheduled
+      const normPlannedTitle = newPlan.custom_title.trim().toLowerCase();
+      const matchingWishIds: string[] = [];
+      setMealWishes((prev) =>
+        prev.filter((w) => {
+          const matchesTitle = w.title.trim().toLowerCase() === normPlannedTitle;
+          const matchesRecipe = Boolean(newPlan.recipe_id && w.linked_recipe_id === newPlan.recipe_id);
+          if (matchesTitle || matchesRecipe) {
+            matchingWishIds.push(w.id);
+            return false;
+          }
+          return true;
+        })
+      );
 
       const generatedMealEvents = buildMealCalendarEvents(
         newPlan,
@@ -759,10 +911,77 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         if (supabase) {
           safeDb(supabase.from('meal_plans').insert(newPlan), 'insert meal_plan');
           safeDb(supabase.from('calendar_events').insert(generatedMealEvents), 'insert meal calendar_events');
+          if (matchingWishIds.length > 0) {
+            safeDb(
+              supabase.from('meal_wishes').delete().in('id', matchingWishIds),
+              'auto-remove fulfilled meal_wishes'
+            );
+          }
         }
       }
 
       return newPlan;
+    },
+    [activeMember.id, household.id, isLiveSupabase, nonKioskMemberIds]
+  );
+
+  const updateMealPlan = useCallback(
+    (
+      id: string,
+      updates: Partial<
+        Pick<
+          MealPlan,
+          | 'planned_date'
+          | 'slot_type'
+          | 'custom_title'
+          | 'portions'
+          | 'cooking_method'
+          | 'notes'
+          | 'includes_next_day_lunch'
+        >
+      >
+    ) => {
+      let updatedPlanObj: MealPlan | null = null;
+
+      setMealPlans((prev) =>
+        prev.map((p) => {
+          if (p.id === id) {
+            updatedPlanObj = { ...p, ...updates };
+            return updatedPlanObj;
+          }
+          return p;
+        })
+      );
+
+      if (updatedPlanObj) {
+        const rebuiltEvents = buildMealCalendarEvents(
+          updatedPlanObj,
+          household.id,
+          nonKioskMemberIds,
+          activeMember.id
+        );
+
+        setCalendarEvents((prev) =>
+          [...prev.filter((ev) => ev.source_meal_plan_id !== id), ...rebuiltEvents].sort(
+            (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+          )
+        );
+
+        if (isLiveSupabase) {
+          const supabase = createClient();
+          if (supabase) {
+            safeDb(supabase.from('meal_plans').update(updates).eq('id', id), 'update meal_plan');
+            safeDb(
+              supabase.from('calendar_events').delete().eq('source_meal_plan_id', id),
+              'delete old meal calendar_events'
+            );
+            safeDb(
+              supabase.from('calendar_events').insert(rebuiltEvents),
+              'insert updated meal calendar_events'
+            );
+          }
+        }
+      }
     },
     [activeMember.id, household.id, isLiveSupabase, nonKioskMemberIds]
   );
@@ -1070,6 +1289,106 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     [adultMemberIds, isLiveSupabase]
   );
 
+  const updateTodo = useCallback(
+    (
+      id: string,
+      updates: {
+        title?: string;
+        notes?: string | null;
+        category_slug?: string;
+        priority?: TodoPriority;
+        assigned_member_id?: string | null;
+        due_date?: string | null;
+      }
+    ) => {
+      let updatedTodo: TodoItem | null = null;
+      setTodos((prev) =>
+        prev.map((t) => {
+          if (t.id !== id) return t;
+          updatedTodo = {
+            ...t,
+            ...(updates.title !== undefined ? { title: updates.title.trim() } : {}),
+            ...(updates.notes !== undefined ? { notes: updates.notes?.trim() || null } : {}),
+            ...(updates.category_slug !== undefined ? { category_slug: updates.category_slug } : {}),
+            ...(updates.priority !== undefined ? { priority: updates.priority } : {}),
+            ...(updates.assigned_member_id !== undefined
+              ? { assigned_member_id: updates.assigned_member_id }
+              : {}),
+            ...(updates.due_date !== undefined ? { due_date: updates.due_date || null } : {}),
+          };
+          return updatedTodo;
+        })
+      );
+
+      if (updatedTodo) {
+        const todoObj = updatedTodo as TodoItem;
+        if (todoObj.due_date) {
+          const catObj = todoCategories.find((c) => c.slug === todoObj.category_slug);
+          const catLabel = catObj ? catObj.name : 'ToDo';
+          const assignedIds = todoObj.assigned_member_id
+            ? [todoObj.assigned_member_id]
+            : adultMemberIds;
+          const prefix = todoObj.is_completed ? '✅ Erledigt: ' : '';
+          const newEvent: CalendarEvent = {
+            id: `ev-todo-${todoObj.id}`,
+            household_id: household.id,
+            title: `${prefix}📌 Deadline [${catLabel}]: ${todoObj.title}`,
+            description: `${todoObj.notes ? `${todoObj.notes} • ` : ''}${
+              todoObj.assigned_member_id
+                ? 'Zugewiesenes Familien-ToDo'
+                : 'Offen für alle (jeder kann übernehmen)'
+            }`,
+            location: '8624 Grüt (ZH)',
+            start_at: `${todoObj.due_date}T00:00:00.000Z`,
+            end_at: `${todoObj.due_date}T23:59:59.000Z`,
+            is_all_day: true,
+            assigned_member_ids: assignedIds,
+            category: 'todo',
+            source_todo_id: todoObj.id,
+            sync_status: 'pending',
+            created_by_member_id: todoObj.created_by_member_id,
+            created_at: todoObj.created_at,
+            updated_at: new Date().toISOString(),
+          };
+          setCalendarEvents((prev) => {
+            const filtered = prev.filter((ev) => ev.source_todo_id !== id);
+            return [...filtered, newEvent].sort(
+              (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+            );
+          });
+          if (isLiveSupabase) {
+            const supabase = createClient();
+            if (supabase) {
+              safeDb(
+                supabase.from('calendar_events').upsert(newEvent),
+                'upsert todo deadline event'
+              );
+            }
+          }
+        } else {
+          setCalendarEvents((prev) => prev.filter((ev) => ev.source_todo_id !== id));
+          if (isLiveSupabase) {
+            const supabase = createClient();
+            if (supabase) {
+              safeDb(
+                supabase.from('calendar_events').delete().eq('source_todo_id', id),
+                'delete todo deadline event'
+              );
+            }
+          }
+        }
+      }
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('todos').update(updates).eq('id', id), 'update todo');
+        }
+      }
+    },
+    [adultMemberIds, household.id, isLiveSupabase, todoCategories]
+  );
+
   const deleteTodo = useCallback((id: string) => {
     setTodos((prev) => prev.filter((t) => t.id !== id));
     setCalendarEvents((prev) => prev.filter((ev) => ev.source_todo_id !== id));
@@ -1205,6 +1524,42 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isLiveSupabase]);
 
+  const updateHouseholdNeed = useCallback(
+    (
+      id: string,
+      updates: {
+        title?: string;
+        notes?: string | null;
+        priority?: NeedPriority;
+        product_url?: string | null;
+      }
+    ) => {
+      setHouseholdNeeds((prev) =>
+        prev.map((n) => {
+          if (n.id !== id) return n;
+          return {
+            ...n,
+            ...(updates.title !== undefined ? { title: updates.title.trim() } : {}),
+            ...(updates.notes !== undefined ? { notes: updates.notes?.trim() || null } : {}),
+            ...(updates.priority !== undefined ? { priority: updates.priority } : {}),
+            ...(updates.product_url !== undefined ? { product_url: updates.product_url || null } : {}),
+          };
+        })
+      );
+
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(
+            supabase.from('household_needs').update(updates).eq('id', id),
+            'update household_need'
+          );
+        }
+      }
+    },
+    [isLiveSupabase]
+  );
+
   const deleteHouseholdNeed = useCallback((id: string) => {
     setHouseholdNeeds((prev) => prev.filter((n) => n.id !== id));
 
@@ -1238,16 +1593,19 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         reorderCategories,
         shoppingItems,
         addOrMergeShoppingItems,
+        updateShoppingItem,
         toggleShoppingItem,
         deleteShoppingItem,
         clearCheckedShoppingItems,
         recipes,
         addRecipe,
+        updateRecipe,
         mealWishes,
         addMealWish,
         deleteMealWish,
         mealPlans,
         addMealPlan,
+        updateMealPlan,
         updateMealPlanPortions,
         deleteMealPlan,
         calendarEvents,
@@ -1261,12 +1619,14 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         addTodoCategory,
         todos,
         addTodo,
+        updateTodo,
         toggleTodoCompleted,
         claimTodo,
         deleteTodo,
         leisureActivities,
         householdNeeds,
         addHouseholdNeed,
+        updateHouseholdNeed,
         toggleHouseholdNeedPurchased,
         deleteHouseholdNeed,
         getMemberById,

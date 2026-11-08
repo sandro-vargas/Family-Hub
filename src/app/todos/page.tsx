@@ -15,11 +15,14 @@ import {
   UserCheck,
   FolderPlus,
   CalendarCheck2,
+  Pencil,
+  X,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useFamily } from '@/context/family-context';
 import { CreatorBadge } from '@/components/creator-badge';
 import { VoiceInputButton } from '@/components/voice-input-button';
-import { TodoPriority } from '@/types/family';
+import { TodoItem, TodoPriority } from '@/types/family';
 
 const PRIORITY_META: Record<
   TodoPriority,
@@ -53,13 +56,13 @@ export default function TodosPage() {
     addTodoCategory,
     todos,
     addTodo,
+    updateTodo,
     toggleTodoCompleted,
     claimTodo,
     deleteTodo,
   } = useFamily();
 
-  const selectableMembers = members.filter((m) => m.role !== 'kiosk');
-  // Für ToDos können nur erwachsene Familienmitglieder ausgewählt werden (Tochter Chiara übernimmt keine ToDos)
+  // Für ToDos können nur erwachsene Familienmitglieder ausgewählt werden (Chiara übernimmt keine ToDos)
   const assignableMembers = members.filter((m) => m.role === 'adult');
 
   // Form State for New ToDo
@@ -67,7 +70,7 @@ export default function TodosPage() {
   const [notes, setNotes] = useState('');
   const [categorySlug, setCategorySlug] = useState<string>('kita');
   const [priority, setPriority] = useState<TodoPriority>('normal');
-  const [assignedMemberId, setAssignedMemberId] = useState<string>('unassigned'); // 'unassigned' = Offen für alle
+  const [assignedMemberId, setAssignedMemberId] = useState<string>('unassigned');
   const [dueDate, setDueDate] = useState<string>('');
 
   // Form State for Adding Custom Category
@@ -75,9 +78,21 @@ export default function TodosPage() {
   const [newCatName, setNewCatName] = useState('');
   const [newCatColor, setNewCatColor] = useState('#74956C');
 
-  // Filter State
+  // Filter & Sort State
   const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [filterAssignee, setFilterAssignee] = useState<string>('all'); // 'all' | 'unassigned' | memberId
+  const [filterAssignee, setFilterAssignee] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'priority_deadline' | 'deadline_priority'>(
+    'priority_deadline'
+  );
+
+  // Edit ToDo State
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editPriority, setEditPriority] = useState<TodoPriority>('normal');
+  const [editAssignedId, setEditAssignedId] = useState<string>('unassigned');
+  const [editDueDate, setEditDueDate] = useState<string>('');
+  const [editCategorySlug, setEditCategorySlug] = useState<string>('family');
 
   const handleCreateTodo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,6 +110,29 @@ export default function TodosPage() {
     setTitle('');
     setNotes('');
     setDueDate('');
+  };
+
+  const handleStartEdit = (todo: TodoItem) => {
+    setEditingTodoId(todo.id);
+    setEditTitle(todo.title);
+    setEditNotes(todo.notes || '');
+    setEditPriority(todo.priority);
+    setEditAssignedId(todo.assigned_member_id || 'unassigned');
+    setEditDueDate(todo.due_date || '');
+    setEditCategorySlug(todo.category_slug);
+  };
+
+  const handleSaveEdit = (id: string) => {
+    if (!editTitle.trim()) return;
+    updateTodo(id, {
+      title: editTitle.trim(),
+      notes: editNotes.trim() || null,
+      priority: editPriority,
+      assigned_member_id: editAssignedId === 'unassigned' ? null : editAssignedId,
+      due_date: editDueDate || null,
+      category_slug: editCategorySlug,
+    });
+    setEditingTodoId(null);
   };
 
   const handleAddCategory = (e: React.FormEvent) => {
@@ -121,6 +159,20 @@ export default function TodosPage() {
     })
     .sort((a, b) => {
       if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+
+      if (sortBy === 'deadline_priority') {
+        if (a.due_date && b.due_date) {
+          const cmp = a.due_date.localeCompare(b.due_date);
+          if (cmp !== 0) return cmp;
+        } else if (a.due_date) {
+          return -1;
+        } else if (b.due_date) {
+          return 1;
+        }
+        return PRIORITY_META[b.priority].rank - PRIORITY_META[a.priority].rank;
+      }
+
+      // Default: Priority descending, then Deadline ascending
       const rankDiff = PRIORITY_META[b.priority].rank - PRIORITY_META[a.priority].rank;
       if (rankDiff !== 0) return rankDiff;
       if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
@@ -135,52 +187,46 @@ export default function TodosPage() {
   ).length;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#74956C]/15 text-[#74956C]">
-            AUFGABEN & DEADLINES
-          </span>
-          <h1 className="text-2xl font-extrabold text-[#1E293B] mt-1 flex items-center gap-2">
-            <CheckSquare className="h-6 w-6 text-[#5CA6CE]" />
+    <div className="space-y-4">
+      {/* Compact Header */}
+      <div className="bg-white px-4 py-2.5 rounded-2xl shadow-xs border border-slate-200/90 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <CheckSquare className="h-5 w-5 text-[#5CA6CE]" />
+          <h1 className="text-base sm:text-lg font-extrabold text-[#1E293B]">
             Familien-ToDos ({openTodosCount} offen)
           </h1>
-          <p className="text-xs text-slate-600 mt-0.5">
-            Aufgaben einer Person zuweisen oder als <strong>„Offen für alle“</strong> erfassen – Deadlines erscheinen automatisch im Familienkalender!
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-1.5">
+          <span className="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-1">
             <Hand className="h-3.5 w-3.5" />
-            {openUnassignedCount} ToDos offen zum Übernehmen
+            {openUnassignedCount} offen für alle
           </span>
           <Link
             href="/calendar"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#F4F7F5] hover:bg-slate-200/70 text-[#1E293B] text-xs font-bold border border-slate-200"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#F4F7F5] hover:bg-slate-200/70 text-[#1E293B] text-xs font-bold border border-slate-200"
           >
-            <CalendarCheck2 className="h-4 w-4 text-[#74956C]" />
-            Deadlines im Kalender
+            <CalendarCheck2 className="h-3.5 w-3.5 text-[#74956C]" />
+            Im Kalender
           </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left 5 Columns: Create New ToDo + Manage Categories */}
-        <div className="lg:col-span-5 space-y-5 h-fit">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left 5 Columns: Create New ToDo */}
+        <div className="lg:col-span-5 space-y-4 h-fit">
           <form
             onSubmit={handleCreateTodo}
-            className="bg-white p-5 rounded-2xl shadow-xs border border-slate-200/90 space-y-4"
+            className="bg-white p-4 rounded-2xl shadow-xs border border-slate-200/90 space-y-3.5"
           >
-            <h2 className="font-bold text-base text-[#1E293B] flex items-center gap-2">
-              <Plus className="h-5 w-5 text-[#74956C]" />
+            <h2 className="font-extrabold text-sm sm:text-base text-[#1E293B] flex items-center gap-2">
+              <Plus className="h-4 w-4 text-[#74956C]" />
               Neues Familien-ToDo erfassen
             </h2>
 
             <div>
               <label className="text-xs font-bold text-slate-600 block mb-1">
-                Aufgabe / ToDo
+                Aufgabe / Titel
               </label>
               <div className="flex gap-2">
                 <input
@@ -188,15 +234,15 @@ export default function TodosPage() {
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="z.B. Kita-Kleiderbox auffüllen, Steuererklärung..."
-                  className="flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-[#1E293B] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#74956C]"
+                  className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-[#1E293B] placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#74956C]"
                 />
                 <VoiceInputButton onTranscript={(t) => setTitle(t)} />
               </div>
             </div>
 
-            {/* Category Selection + Add New Category */}
+            {/* Category Selection */}
             <div>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center justify-between mb-1">
                 <label className="text-xs font-bold text-slate-600 flex items-center gap-1">
                   <Tag className="h-3.5 w-3.5 text-[#74956C]" />
                   Kategorie
@@ -219,14 +265,14 @@ export default function TodosPage() {
                       key={cat.id}
                       type="button"
                       onClick={() => setCategorySlug(cat.slug)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
                         isSelected
                           ? 'bg-[#1E293B] text-white border-[#1E293B] shadow-2xs'
                           : 'bg-[#F4F7F5] text-slate-700 border-slate-200 hover:bg-slate-200/70'
                       }`}
                     >
                       <span
-                        className="h-2.5 w-2.5 rounded-full"
+                        className="h-2 w-2 rounded-full"
                         style={{ backgroundColor: cat.color_hex }}
                       />
                       {cat.name}
@@ -236,17 +282,14 @@ export default function TodosPage() {
               </div>
 
               {showNewCatForm && (
-                <div className="mt-2.5 p-3 rounded-xl bg-[#F4F7F5] border border-slate-200 space-y-2">
-                  <span className="text-[11px] font-bold text-[#1E293B] block">
-                    Eigene ToDo-Kategorie hinzufügen (z.B. Garten, Auto, Ferien)
-                  </span>
+                <div className="mt-2 p-2.5 rounded-xl bg-[#F4F7F5] border border-slate-200 space-y-2">
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
                       value={newCatName}
                       onChange={(e) => setNewCatName(e.target.value)}
                       placeholder="Kategorie-Name..."
-                      className="flex-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-[#1E293B]"
+                      className="flex-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs text-[#1E293B]"
                     />
                     <input
                       type="color"
@@ -257,7 +300,7 @@ export default function TodosPage() {
                     <button
                       type="button"
                       onClick={handleAddCategory}
-                      className="px-3 py-1.5 rounded-lg bg-[#74956C] text-white text-xs font-bold"
+                      className="px-2.5 py-1 rounded-lg bg-[#74956C] text-white text-xs font-bold"
                     >
                       Speichern
                     </button>
@@ -266,24 +309,24 @@ export default function TodosPage() {
               )}
             </div>
 
-            {/* Assignment: Specific Member OR Independent ("Offen für alle") */}
+            {/* Assignment */}
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1.5 flex items-center gap-1">
+              <label className="text-xs font-bold text-slate-600 block mb-1 flex items-center gap-1">
                 <Users className="h-3.5 w-3.5 text-[#5CA6CE]" />
-                Zuständigkeit (Person oder unabhängig für alle)
+                Zuständigkeit
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setAssignedMemberId('unassigned')}
-                  className={`col-span-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
+                  className={`col-span-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center gap-1.5 ${
                     assignedMemberId === 'unassigned'
                       ? 'bg-[#5CA6CE] text-white border-[#5CA6CE] shadow-2xs'
                       : 'bg-[#F4F7F5] text-slate-700 border-slate-200'
                   }`}
                 >
                   <Hand className="h-3.5 w-3.5" />
-                  Unabhängig / Offen für alle (Jeder kann übernehmen)
+                  Offen für alle (Jeder kann übernehmen)
                 </button>
 
                 {assignableMembers.map((m) => {
@@ -293,7 +336,7 @@ export default function TodosPage() {
                       key={m.id}
                       type="button"
                       onClick={() => setAssignedMemberId(m.id)}
-                      className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
                         isSel
                           ? 'bg-[#74956C] text-white border-[#74956C] shadow-2xs'
                           : 'bg-white text-slate-700 border-slate-200'
@@ -311,7 +354,7 @@ export default function TodosPage() {
             </div>
 
             {/* Priority & Deadline */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
                 <label className="text-xs font-bold text-slate-600 block mb-1">
                   Priorität
@@ -330,7 +373,7 @@ export default function TodosPage() {
               <div>
                 <label className="text-xs font-bold text-slate-600 block mb-1 flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5 text-[#74956C]" />
-                  Deadline (erscheint im Kalender)
+                  Deadline
                 </label>
                 <input
                   type="date"
@@ -350,57 +393,72 @@ export default function TodosPage() {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="z.B. Grösse 98/104, im Kellerregal links..."
-                className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs text-[#1E293B] placeholder:text-slate-400"
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-[#1E293B] placeholder:text-slate-400"
               />
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-[#74956C] hover:bg-[#618059] text-white font-bold text-sm shadow-xs transition-colors"
+              className="w-full py-2.5 rounded-xl bg-[#74956C] hover:bg-[#618059] text-white font-bold text-sm shadow-xs transition-colors"
             >
-              ToDo speichern {dueDate ? '& Deadline im Kalender eintragen' : ''}
+              ToDo speichern
             </button>
           </form>
         </div>
 
-        {/* Right 7 Columns: Filter Bar & ToDo List */}
-        <div className="lg:col-span-7 space-y-4">
-          {/* Filter Bar */}
-          <div className="bg-white p-4 rounded-2xl shadow-xs border border-slate-200/90 space-y-3">
-            {/* Category Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] font-bold text-slate-400 uppercase mr-1">
-                Kategorie:
-              </span>
-              <button
-                type="button"
-                onClick={() => setFilterCategory('all')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
-                  filterCategory === 'all'
-                    ? 'bg-[#74956C] text-white'
-                    : 'bg-[#F4F7F5] text-slate-600 hover:bg-slate-200/70'
-                }`}
-              >
-                Alle ({todos.length})
-              </button>
-              {todoCategories.map((cat) => (
+        {/* Right 7 Columns: Filter, Sort & Editable ToDo List */}
+        <div className="lg:col-span-7 space-y-3">
+          {/* Filter & Sort Bar */}
+          <div className="bg-white p-3.5 rounded-2xl shadow-xs border border-slate-200/90 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Category Filter Pills */}
+              <div className="flex flex-wrap items-center gap-1">
                 <button
-                  key={cat.id}
                   type="button"
-                  onClick={() => setFilterCategory(cat.slug)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
-                    filterCategory === cat.slug
-                      ? 'bg-[#1E293B] text-white'
+                  onClick={() => setFilterCategory('all')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    filterCategory === 'all'
+                      ? 'bg-[#74956C] text-white'
                       : 'bg-[#F4F7F5] text-slate-600 hover:bg-slate-200/70'
                   }`}
                 >
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: cat.color_hex }}
-                  />
-                  {cat.name}
+                  Alle ({todos.length})
                 </button>
-              ))}
+                {todoCategories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setFilterCategory(cat.slug)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${
+                      filterCategory === cat.slug
+                        ? 'bg-[#1E293B] text-white'
+                        : 'bg-[#F4F7F5] text-slate-600 hover:bg-slate-200/70'
+                    }`}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ backgroundColor: cat.color_hex }}
+                    />
+                    {cat.name}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sort Selector (Priority & Deadline) */}
+              <div className="flex items-center gap-1.5 bg-[#F4F7F5] px-2.5 py-1 rounded-xl border border-slate-200">
+                <ArrowUpDown className="h-3.5 w-3.5 text-[#74956C]" />
+                <span className="text-[11px] font-bold text-slate-500">Sortierung:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) =>
+                    setSortBy(e.target.value as 'priority_deadline' | 'deadline_priority')
+                  }
+                  className="bg-transparent text-xs font-extrabold text-[#1E293B] focus:outline-none cursor-pointer"
+                >
+                  <option value="priority_deadline">1. Priorität → 2. Deadline</option>
+                  <option value="deadline_priority">1. Deadline → 2. Priorität</option>
+                </select>
+              </div>
             </div>
 
             {/* Assignee Filter Pills */}
@@ -429,7 +487,7 @@ export default function TodosPage() {
                 }`}
               >
                 <Hand className="h-3 w-3" />
-                Offen für alle ({openUnassignedCount})
+                Offen ({openUnassignedCount})
               </button>
               {assignableMembers.map((m) => (
                 <button
@@ -453,7 +511,7 @@ export default function TodosPage() {
           </div>
 
           {/* ToDo Items */}
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {filteredTodos.length === 0 ? (
               <div className="bg-white rounded-2xl p-8 text-center border border-slate-200/90">
                 <p className="text-sm font-bold text-slate-600">
@@ -469,6 +527,122 @@ export default function TodosPage() {
                 const assignedMember = todo.assigned_member_id
                   ? members.find((m) => m.id === todo.assigned_member_id)
                   : null;
+                const isEditing = editingTodoId === todo.id;
+
+                if (isEditing) {
+                  return (
+                    <div
+                      key={todo.id}
+                      className="bg-white rounded-2xl p-4 shadow-md border-2 border-[#5CA6CE] space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold uppercase text-[#2d7ba4]">
+                          ToDo bearbeiten
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setEditingTodoId(null)}
+                          className="p-1 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-2.5">
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-600 block mb-0.5">
+                            Titel
+                          </label>
+                          <input
+                            type="text"
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs sm:text-sm font-bold text-[#1E293B]"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 block mb-0.5">
+                              Zuständigkeit
+                            </label>
+                            <select
+                              value={editAssignedId}
+                              onChange={(e) => setEditAssignedId(e.target.value)}
+                              className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-[#1E293B] bg-white"
+                            >
+                              <option value="unassigned">Offen für alle</option>
+                              {assignableMembers.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.display_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 block mb-0.5">
+                              Priorität
+                            </label>
+                            <select
+                              value={editPriority}
+                              onChange={(e) =>
+                                setEditPriority(e.target.value as TodoPriority)
+                              }
+                              className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-[#1E293B] bg-white"
+                            >
+                              <option value="high">🔥 Hoch / Dringend</option>
+                              <option value="normal">⚡ Normal</option>
+                              <option value="low">🌱 Niedrig</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-bold text-slate-600 block mb-0.5">
+                              Deadline
+                            </label>
+                            <input
+                              type="date"
+                              value={editDueDate}
+                              onChange={(e) => setEditDueDate(e.target.value)}
+                              className="w-full rounded-xl border border-slate-300 px-2.5 py-1.5 text-xs font-bold text-[#1E293B] bg-white"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-600 block mb-0.5">
+                            Notiz
+                          </label>
+                          <input
+                            type="text"
+                            value={editNotes}
+                            onChange={(e) => setEditNotes(e.target.value)}
+                            placeholder="Optionale Notiz..."
+                            className="w-full rounded-xl border border-slate-300 px-3 py-1.5 text-xs text-[#1E293B]"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingTodoId(null)}
+                            className="px-3 py-1.5 rounded-xl bg-slate-200 text-slate-700 text-xs font-bold"
+                          >
+                            Abbrechen
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEdit(todo.id)}
+                            className="px-3.5 py-1.5 rounded-xl bg-[#74956C] hover:bg-[#618059] text-white text-xs font-bold flex items-center gap-1"
+                          >
+                            <Check className="h-3.5 w-3.5" /> Speichern
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
 
                 const formattedDeadline = todo.due_date
                   ? new Intl.DateTimeFormat('de-CH', {
@@ -481,7 +655,7 @@ export default function TodosPage() {
                 return (
                   <div
                     key={todo.id}
-                    className={`bg-white rounded-2xl p-4 shadow-xs border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    className={`bg-white rounded-2xl p-3.5 shadow-xs border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
                       todo.is_completed
                         ? 'border-slate-200 opacity-60'
                         : todo.priority === 'high'
@@ -493,38 +667,35 @@ export default function TodosPage() {
                       <button
                         type="button"
                         onClick={() => toggleTodoCompleted(todo.id)}
-                        className={`mt-0.5 h-6 w-6 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        className={`mt-0.5 h-5 w-5 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                           todo.is_completed
                             ? 'bg-[#74956C] text-white'
                             : 'border-2 border-[#74956C] bg-white hover:bg-[#74956C]/10'
                         }`}
                         title={todo.is_completed ? 'Als offen markieren' : 'Abhaken'}
                       >
-                        {todo.is_completed && <Check className="h-4 w-4" />}
+                        {todo.is_completed && <Check className="h-3.5 w-3.5" />}
                       </button>
 
-                      <div className="space-y-1.5 min-w-0">
+                      <div className="space-y-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {/* Category Badge */}
                           <span
-                            className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold text-white uppercase"
+                            className="px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white uppercase"
                             style={{ backgroundColor: cat?.color_hex || '#74956C' }}
                           >
                             {cat?.name || todo.category_slug}
                           </span>
 
-                          {/* Priority Badge */}
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${prio.badgeBg} ${prio.badgeText}`}
                           >
                             {prio.label}
                           </span>
 
-                          {/* Deadline Badge (linked with Calendar) */}
                           {formattedDeadline && (
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              Deadline: {formattedDeadline} (im Kalender)
+                              Fällig: {formattedDeadline}
                             </span>
                           )}
                         </div>
@@ -543,52 +714,48 @@ export default function TodosPage() {
 
                         <div className="flex flex-wrap items-center gap-2 pt-0.5">
                           {assignedMember ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-[#74956C]/12 text-[#4d6847] text-xs font-bold">
-                              <UserCheck className="h-3.5 w-3.5" />
-                              Zugewiesen an: {assignedMember.display_name}
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#74956C]/12 text-[#4d6847] text-xs font-bold">
+                              <UserCheck className="h-3 w-3" />
+                              {assignedMember.display_name}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[#5CA6CE]/15 text-[#2d7ba4] text-xs font-bold">
-                              <AlertCircle className="h-3.5 w-3.5" />
-                              Offen für alle (Jeder kann übernehmen)
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#5CA6CE]/15 text-[#2d7ba4] text-xs font-bold">
+                              <AlertCircle className="h-3 w-3" />
+                              Offen für alle
                             </span>
                           )}
 
-                          <span className="text-[11px] text-slate-400">Erfasst von:</span>
                           <CreatorBadge memberId={todo.created_by_member_id} showName={false} />
                         </div>
                       </div>
                     </div>
 
-                    {/* Right Actions: Claim / Unassign + Delete */}
-                    <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    {/* Right Actions: Claim / Edit / Delete */}
+                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                       {!todo.is_completed && !todo.assigned_member_id && activeMember.role === 'adult' && (
                         <button
                           type="button"
                           onClick={() => claimTodo(todo.id, activeMember.id)}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#5CA6CE] hover:bg-[#488eb5] text-white text-xs font-bold shadow-2xs transition-colors"
-                          title={`Als ${activeMember.display_name} übernehmen`}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#5CA6CE] hover:bg-[#488eb5] text-white text-xs font-bold shadow-2xs transition-colors"
                         >
                           <Hand className="h-3.5 w-3.5" />
-                          Ich übernehme ({activeMember.short_code})
-                        </button>
-                      )}
-
-                      {!todo.is_completed && todo.assigned_member_id && (
-                        <button
-                          type="button"
-                          onClick={() => claimTodo(todo.id, null)}
-                          className="px-2.5 py-1.5 rounded-xl bg-[#F4F7F5] hover:bg-slate-200 text-slate-600 text-[11px] font-bold"
-                          title="Zuweisung aufheben (wieder offen für alle machen)"
-                        >
-                          Freigeben
+                          Übernehmen
                         </button>
                       )}
 
                       <button
                         type="button"
+                        onClick={() => handleStartEdit(todo)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-[#5CA6CE] hover:bg-sky-50"
+                        title="ToDo bearbeiten (Titel, Zuständigkeit, Priorität, Deadline, Notiz)"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => deleteTodo(todo.id)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
                         title="ToDo löschen"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -604,4 +771,3 @@ export default function TodosPage() {
     </div>
   );
 }
-
