@@ -6,6 +6,7 @@ import React, {
   useEffect,
   useState,
   useCallback,
+  useRef,
 } from 'react';
 import {
   Household,
@@ -329,6 +330,17 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   const [googleSyncConfig, setGoogleSyncConfig] = useState<GoogleSyncConfig>(INITIAL_GOOGLE_SYNC_CONFIG);
   const [isSyncingGoogle, setIsSyncingGoogle] = useState<boolean>(false);
   const [hydrated, setHydrated] = useState(false);
+
+  const isSyncingRef = useRef<boolean>(false);
+  const lastAutoSyncAtRef = useRef<number>(0);
+  const lastPendingSyncSigRef = useRef<string>('');
+  const calendarEventsRef = useRef<CalendarEvent[]>(calendarEvents);
+  const googleSyncConfigRef = useRef<GoogleSyncConfig>(googleSyncConfig);
+  const membersRef = useRef<HouseholdMember[]>(members);
+
+  calendarEventsRef.current = calendarEvents;
+  googleSyncConfigRef.current = googleSyncConfig;
+  membersRef.current = members;
 
   const isLiveSupabase = isSupabaseConfigured();
 
@@ -1088,7 +1100,16 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   );
 
   const deleteCalendarEvent = useCallback((id: string) => {
+    const target = calendarEventsRef.current.find((e) => e.id === id);
     setCalendarEvents((prev) => prev.filter((e) => e.id !== id));
+
+    if (target?.external_event_id && !target.external_event_id.startsWith('gcal-')) {
+      fetch('/api/calendar/google-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteExternalEventId: target.external_event_id }),
+      }).catch(() => null);
+    }
 
     if (isLiveSupabase) {
       const supabase = createClient();
@@ -1401,31 +1422,57 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const syncWithGoogleCalendar = useCallback(async () => {
+    if (isSyncingRef.current) {
+      return {
+        syncedCount: 0,
+        importedCount: 0,
+        mode: 'skipped',
+        message: 'Synchronisation läuft bereits.',
+      };
+    }
+
+    isSyncingRef.current = true;
     setIsSyncingGoogle(true);
     try {
+      const currentConfig = googleSyncConfigRef.current;
       const response = await fetch('/api/calendar/google-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          calendarId: googleSyncConfig.calendar_id || 'primary',
-          syncMeals: googleSyncConfig.sync_meals,
-          syncTodos: googleSyncConfig.sync_todos,
-          events: calendarEvents,
-          members: members.map((m) => ({ id: m.id, display_name: m.display_name })),
+          calendarId:
+            currentConfig.calendar_id && currentConfig.calendar_id !== 'primary'
+              ? currentConfig.calendar_id
+              : undefined,
+          syncMeals: currentConfig.sync_meals,
+          syncTodos: currentConfig.sync_todos,
+          events: calendarEventsRef.current,
+          members: membersRef.current.map((m) => ({
+            id: m.id,
+            display_name: m.display_name,
+          })),
         }),
       });
 
       const data = await response.json();
       if (data.mergedEvents && Array.isArray(data.mergedEvents)) {
-        setCalendarEvents(
-          data.mergedEvents.sort(
-            (a: CalendarEvent, b: CalendarEvent) =>
-              new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
-          )
+        const sortedEvents = [...(data.mergedEvents as CalendarEvent[])].sort(
+          (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
         );
+        setCalendarEvents(sortedEvents);
+
+        if (isLiveSupabase && sortedEvents.length > 0) {
+          const supabase = createClient();
+          if (supabase) {
+            safeDb(
+              supabase.from('calendar_events').upsert(sortedEvents),
+              'upsert synced calendar_events'
+            );
+          }
+        }
       }
 
       const nowIso = new Date().toISOString();
+      lastAutoSyncAtRef.current = Date.now();
       setGoogleSyncConfig((prev) => ({ ...prev, last_synced_at: nowIso }));
 
       return {
@@ -1444,9 +1491,61 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         message: err?.message || 'Synchronisation fehlgeschlagen.',
       };
     } finally {
+      isSyncingRef.current = false;
       setIsSyncingGoogle(false);
     }
-  }, [calendarEvents, googleSyncConfig, members]);
+  }, [isLiveSupabase]);
+
+  // Initial & periodic (5 min + window focus) automatic Google Calendar Sync
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const runAutoSync = () => {
+      lastAutoSyncAtRef.current = Date.now();
+      void syncWithGoogleCalendar();
+    };
+
+    const initTimer = setTimeout(runAutoSync, 400);
+    const intervalId = setInterval(runAutoSync, 5 * 60 * 1000);
+
+    const handleFocus = () => {
+      if (Date.now() - lastAutoSyncAtRef.current > 60_000) {
+        runAutoSync();
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [hydrated, syncWithGoogleCalendar]);
+
+  // Automatic push when local calendar events become pending
+  useEffect(() => {
+    if (!hydrated) return;
+    const pendingEvents = calendarEvents.filter((e) => e.sync_status === 'pending');
+    const sig = pendingEvents
+      .map((e) => `${e.id}:${e.updated_at || ''}`)
+      .sort()
+      .join('|');
+
+    if (!sig) {
+      lastPendingSyncSigRef.current = '';
+      return;
+    }
+
+    if (sig === lastPendingSyncSigRef.current) return;
+    lastPendingSyncSigRef.current = sig;
+
+    const timer = setTimeout(() => {
+      lastAutoSyncAtRef.current = Date.now();
+      void syncWithGoogleCalendar();
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [calendarEvents, hydrated, syncWithGoogleCalendar]);
 
   // Household Needs (Bedarf)
   const addHouseholdNeed = useCallback(

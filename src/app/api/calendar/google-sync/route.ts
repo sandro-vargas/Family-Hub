@@ -107,6 +107,36 @@ function inferCategoryFromGoogleEvent(title: string, extCategory?: string): Even
 }
 
 function inferAssignedMembers(title: string, extMembers?: string): string[] {
+  const trimmed = title.trim();
+  // 1. Check explicit prefixes at the beginning of the title:
+  //    - With colon: "S: ...", "J: ...", "C: ...", "S+C: ...", "S+J: ...", "J+C: ...", "S+J+C: ..."
+  //    - Combination with +/&// without colon: "S+C ...", "S+J ...", "J+C ..."
+  //    - Single letter S, J, C followed by space or " - ": "C ...", "S ...", "J ..."
+  const colonMatch = trimmed.match(/^([SJC](?:\s*[+&/,]\s*[SJC])*)\s*:\s*/i);
+  const comboMatch = trimmed.match(/^([SJC](?:\s*[+&/]\s*[SJC])+)(?:\s*[:\-]\s*|\s+|$)/i);
+  const singleSpaceMatch = trimmed.match(/^([SJC])(?:\s+-\s+|\s+)/i);
+
+  const prefixRaw = colonMatch?.[1] || comboMatch?.[1] || singleSpaceMatch?.[1];
+  if (prefixRaw) {
+    const tokens = prefixRaw
+      .toUpperCase()
+      .split(/[\s+&/,]+/)
+      .filter(Boolean);
+    const prefixIds: string[] = [];
+    if (tokens.includes('S') && !prefixIds.includes(MEMBER_SANDRO_ID)) {
+      prefixIds.push(MEMBER_SANDRO_ID);
+    }
+    if (tokens.includes('J') && !prefixIds.includes(MEMBER_FRAU_ID)) {
+      prefixIds.push(MEMBER_FRAU_ID);
+    }
+    if (tokens.includes('C') && !prefixIds.includes(MEMBER_TOCHTER_ID)) {
+      prefixIds.push(MEMBER_TOCHTER_ID);
+    }
+    if (prefixIds.length > 0) {
+      return prefixIds;
+    }
+  }
+
   if (extMembers) {
     try {
       const parsed = JSON.parse(extMembers);
@@ -115,11 +145,14 @@ function inferAssignedMembers(title: string, extMembers?: string): string[] {
       // ignore
     }
   }
-  const lower = title.toLowerCase();
+
+  const lower = trimmed.toLowerCase();
   const ids: string[] = [];
   if (lower.includes('sandro')) ids.push(MEMBER_SANDRO_ID);
   if (lower.includes('jenni') || lower.includes('frau')) ids.push(MEMBER_FRAU_ID);
-  if (lower.includes('chiara') || lower.includes('tochter') || lower.includes('kita')) ids.push(MEMBER_TOCHTER_ID);
+  if (lower.includes('chiara') || lower.includes('tochter') || lower.includes('kita')) {
+    ids.push(MEMBER_TOCHTER_ID);
+  }
   if (ids.length === 0) {
     return [MEMBER_SANDRO_ID, MEMBER_FRAU_ID];
   }
@@ -130,12 +163,26 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const calendarId: string =
-      body.calendarId || process.env.GOOGLE_CALENDAR_ID || 'primary';
+      process.env.GOOGLE_CALENDAR_ID ||
+      (body.calendarId && body.calendarId !== 'primary' ? body.calendarId : 'primary');
     const syncMeals: boolean = body.syncMeals !== false;
     const syncTodos: boolean = body.syncTodos !== false;
     const localEvents: CalendarEvent[] = Array.isArray(body.events) ? body.events : [];
 
     const accessToken = await getGoogleAccessToken();
+
+    if (body.deleteExternalEventId && accessToken) {
+      await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+          calendarId
+        )}/events/${encodeURIComponent(body.deleteExternalEventId)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      return NextResponse.json({ mode: 'live-google-api', deleted: true });
+    }
 
     // If no Google Cloud credentials are configured yet in .env.local, run Smart 2-Way Bridge Mode
     if (!accessToken) {
@@ -238,6 +285,8 @@ export async function POST(request: Request) {
           start_at: startIso,
           end_at: endIso,
           is_all_day: isAllDay,
+          assigned_member_ids: inferAssignedMembers(title, privateProps.assignedMemberIds),
+          category: inferCategoryFromGoogleEvent(title, privateProps.category),
           external_calendar_id: calendarId,
           external_event_id: gEventId,
           sync_status: 'synced',
@@ -282,7 +331,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      if (!ev.external_event_id || ev.sync_status === 'pending') {
+      if (ev.sync_status === 'pending') {
         const gPayload = {
           summary: ev.title,
           description: ev.description || '',

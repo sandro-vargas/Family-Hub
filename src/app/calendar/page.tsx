@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import Link from 'next/link';
 import {
   CalendarDays,
   Plus,
@@ -275,12 +274,6 @@ export default function CalendarPage() {
             <CheckCircle2 className="h-4 w-4 shrink-0" />
             <span>{syncMessage}</span>
           </div>
-          <Link
-            href="/settings"
-            className="px-2.5 py-1 rounded-lg bg-white text-[#74956C] text-xs font-extrabold shrink-0"
-          >
-            Sync-Setup
-          </Link>
         </div>
       )}
 
