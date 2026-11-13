@@ -24,3 +24,72 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Global Dark Theme (Automatic 19:00-07:00 or Manual Toggle) */
+html.dark-theme {
+  color-scheme: dark;
+}
+
+html.dark-theme body {
+  background: #0b1120;
+  color: #f8fafc;
+}
+
+html.dark-theme main .bg-white,
+html.dark-theme main [class*="bg-white/"] {
+  background-color: #1e293b !important;
+  color: #f8fafc;
+}
+
+html.dark-theme main .bg-\[\#F4F7F5\],
+html.dark-theme main .bg-slate-50,
+html.dark-theme main [class*="bg-slate-50/"],
+html.dark-theme main .bg-slate-100,
+html.dark-theme main [class*="bg-slate-100/"] {
+  background-color: #0f172a !important;
+  color: #e2e8f0;
+}
+
+html.dark-theme main .border-white,
+html.dark-theme main [class*="border-white/"],
+html.dark-theme main .border-slate-100,
+html.dark-theme main .border-slate-200,
+html.dark-theme main [class*="border-slate-200/"],
+html.dark-theme main .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+html.dark-theme main .text-\[\#1E293B\],
+html.dark-theme main .text-slate-900,
+html.dark-theme main .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+html.dark-theme main .text-slate-700,
+html.dark-theme main .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark-theme main .text-slate-500,
+html.dark-theme main .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark-theme main input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+html.dark-theme main select,
+html.dark-theme main textarea {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+html.dark-theme main input::placeholder,
+html.dark-theme main textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.dark-theme main .hover\:bg-slate-50:hover,
+html.dark-theme main .hover\:bg-slate-100:hover,
+html.dark-theme main .hover\:bg-white:hover {
+  background-color: #334155 !important;
+}
