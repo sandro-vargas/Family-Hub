@@ -734,22 +734,22 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   );
 
   const toggleShoppingItem = useCallback((id: string) => {
-    let newChecked = false;
-    let newCheckedAt: string | null = null;
+    const target = shoppingItems.find((item) => item.id === id);
+    if (!target) return;
+
+    const newChecked = !target.is_checked;
+    const newCheckedAt = newChecked ? new Date().toISOString() : null;
 
     setShoppingItems((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          newChecked = !item.is_checked;
-          newCheckedAt = newChecked ? new Date().toISOString() : null;
-          return {
-            ...item,
-            is_checked: newChecked,
-            checked_at: newCheckedAt,
-          };
-        }
-        return item;
-      })
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              is_checked: newChecked,
+              checked_at: newCheckedAt,
+            }
+          : item
+      )
     );
 
     if (isLiveSupabase) {
@@ -764,7 +764,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         );
       }
     }
-  }, [isLiveSupabase]);
+  }, [isLiveSupabase, shoppingItems]);
 
   const deleteShoppingItem = useCallback((id: string) => {
     setShoppingItems((prev) => prev.filter((item) => item.id !== id));
@@ -941,76 +941,69 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         >
       >
     ) => {
-      let updatedPlanObj: MealPlan | null = null;
+      const existing = mealPlans.find((p) => p.id === id);
+      if (!existing) return;
+
+      const updatedPlanObj: MealPlan = { ...existing, ...updates };
 
       setMealPlans((prev) =>
-        prev.map((p) => {
-          if (p.id === id) {
-            updatedPlanObj = { ...p, ...updates };
-            return updatedPlanObj;
-          }
-          return p;
-        })
+        prev.map((p) => (p.id === id ? updatedPlanObj : p))
       );
 
-      if (updatedPlanObj) {
-        const rebuiltEvents = buildMealCalendarEvents(
-          updatedPlanObj,
-          household.id,
-          nonKioskMemberIds,
-          activeMember.id
-        );
+      const rebuiltEvents = buildMealCalendarEvents(
+        updatedPlanObj,
+        household.id,
+        nonKioskMemberIds,
+        activeMember.id
+      );
 
-        setCalendarEvents((prev) =>
-          [...prev.filter((ev) => ev.source_meal_plan_id !== id), ...rebuiltEvents].sort(
-            (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
-          )
-        );
+      setCalendarEvents((prev) =>
+        [...prev.filter((ev) => ev.source_meal_plan_id !== id), ...rebuiltEvents].sort(
+          (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+        )
+      );
 
-        if (isLiveSupabase) {
-          const supabase = createClient();
-          if (supabase) {
-            safeDb(supabase.from('meal_plans').update(updates).eq('id', id), 'update meal_plan');
-            safeDb(
-              supabase.from('calendar_events').delete().eq('source_meal_plan_id', id),
-              'delete old meal calendar_events'
-            );
-            safeDb(
-              supabase.from('calendar_events').insert(rebuiltEvents),
-              'insert updated meal calendar_events'
-            );
-          }
+      if (isLiveSupabase) {
+        const supabase = createClient();
+        if (supabase) {
+          safeDb(supabase.from('meal_plans').update(updates).eq('id', id), 'update meal_plan');
+          safeDb(
+            supabase.from('calendar_events').delete().eq('source_meal_plan_id', id),
+            'delete old meal calendar_events'
+          );
+          safeDb(
+            supabase.from('calendar_events').insert(rebuiltEvents),
+            'insert updated meal calendar_events'
+          );
         }
       }
     },
-    [activeMember.id, household.id, isLiveSupabase, nonKioskMemberIds]
+    [activeMember.id, household.id, isLiveSupabase, mealPlans, nonKioskMemberIds]
   );
 
   const updateMealPlanPortions = useCallback(
     (planId: string, newPortions: number) => {
+      const existing = mealPlans.find((p) => p.id === planId);
+      if (!existing) return;
+
       const clamped = Math.max(1, Math.min(12, newPortions));
-      let notesToSave: string | undefined = undefined;
-      let targetTitle = '';
-      let targetSlot: MealSlotType = 'dinner';
-      let targetNextDayLunch = false;
+      const targetTitle = existing.custom_title;
+      const targetSlot: MealSlotType = existing.slot_type;
+      const targetNextDayLunch = existing.includes_next_day_lunch;
+      const notesToSave = existing.includes_next_day_lunch
+        ? `${clamped} Portionen (inkl. Mittagessen am nächsten Tag zum Aufwärmen)`
+        : `${clamped} Portionen`;
 
       setMealPlans((prev) =>
-        prev.map((p) => {
-          if (p.id === planId) {
-            targetTitle = p.custom_title;
-            targetSlot = p.slot_type;
-            targetNextDayLunch = p.includes_next_day_lunch;
-            notesToSave = p.includes_next_day_lunch
-              ? `${clamped} Portionen (inkl. Mittagessen am nächsten Tag zum Aufwärmen)`
-              : `${clamped} Portionen`;
-            return {
-              ...p,
-              portions: clamped,
-              notes: notesToSave,
-            };
-          }
-          return p;
-        })
+        prev.map((p) =>
+          p.id === planId
+            ? {
+                ...p,
+                portions: clamped,
+                notes: notesToSave,
+              }
+            : p
+        )
       );
 
       setCalendarEvents((prev) =>
@@ -1050,7 +1043,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [isLiveSupabase]
+    [isLiveSupabase, mealPlans]
   );
 
   const deleteMealPlan = useCallback((id: string) => {
@@ -1206,23 +1199,24 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
   const toggleTodoCompleted = useCallback(
     (id: string) => {
-      let nowCompleted = false;
-      let completedAt: string | null = null;
-      let completedBy: string | null = null;
+      const target = todos.find((t) => t.id === id);
+      if (!target) return;
+
+      const nowCompleted = !target.is_completed;
+      const completedAt = nowCompleted ? new Date().toISOString() : null;
+      const completedBy = nowCompleted ? activeMember.id : null;
 
       setTodos((prev) =>
-        prev.map((t) => {
-          if (t.id !== id) return t;
-          nowCompleted = !t.is_completed;
-          completedAt = nowCompleted ? new Date().toISOString() : null;
-          completedBy = nowCompleted ? activeMember.id : null;
-          return {
-            ...t,
-            is_completed: nowCompleted,
-            completed_by_member_id: completedBy,
-            completed_at: completedAt,
-          };
-        })
+        prev.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                is_completed: nowCompleted,
+                completed_by_member_id: completedBy,
+                completed_at: completedAt,
+              }
+            : t
+        )
       );
 
       setCalendarEvents((prev) =>
@@ -1255,7 +1249,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [activeMember.id, isLiveSupabase]
+    [activeMember.id, isLiveSupabase, todos]
   );
 
   const claimTodo = useCallback(
@@ -1301,80 +1295,79 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         due_date?: string | null;
       }
     ) => {
-      let updatedTodo: TodoItem | null = null;
-      setTodos((prev) =>
-        prev.map((t) => {
-          if (t.id !== id) return t;
-          updatedTodo = {
-            ...t,
-            ...(updates.title !== undefined ? { title: updates.title.trim() } : {}),
-            ...(updates.notes !== undefined ? { notes: updates.notes?.trim() || null } : {}),
-            ...(updates.category_slug !== undefined ? { category_slug: updates.category_slug } : {}),
-            ...(updates.priority !== undefined ? { priority: updates.priority } : {}),
-            ...(updates.assigned_member_id !== undefined
-              ? { assigned_member_id: updates.assigned_member_id }
-              : {}),
-            ...(updates.due_date !== undefined ? { due_date: updates.due_date || null } : {}),
-          };
-          return updatedTodo;
-        })
-      );
+      const existing = todos.find((t) => t.id === id);
+      if (!existing) return;
 
-      if (updatedTodo) {
-        const todoObj = updatedTodo as TodoItem;
-        if (todoObj.due_date) {
-          const catObj = todoCategories.find((c) => c.slug === todoObj.category_slug);
-          const catLabel = catObj ? catObj.name : 'ToDo';
-          const assignedIds = todoObj.assigned_member_id
-            ? [todoObj.assigned_member_id]
-            : adultMemberIds;
-          const prefix = todoObj.is_completed ? '✅ Erledigt: ' : '';
-          const newEvent: CalendarEvent = {
-            id: `ev-todo-${todoObj.id}`,
-            household_id: household.id,
-            title: `${prefix}📌 Deadline [${catLabel}]: ${todoObj.title}`,
-            description: `${todoObj.notes ? `${todoObj.notes} • ` : ''}${
-              todoObj.assigned_member_id
-                ? 'Zugewiesenes Familien-ToDo'
-                : 'Offen für alle (jeder kann übernehmen)'
-            }`,
-            location: '8624 Grüt (ZH)',
-            start_at: `${todoObj.due_date}T00:00:00.000Z`,
-            end_at: `${todoObj.due_date}T23:59:59.000Z`,
-            is_all_day: true,
-            assigned_member_ids: assignedIds,
-            category: 'todo',
-            source_todo_id: todoObj.id,
-            sync_status: 'pending',
-            created_by_member_id: todoObj.created_by_member_id,
-            created_at: todoObj.created_at,
-            updated_at: new Date().toISOString(),
-          };
-          setCalendarEvents((prev) => {
-            const filtered = prev.filter((ev) => ev.source_todo_id !== id);
-            return [...filtered, newEvent].sort(
-              (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+      const sanitizedUpdates = {
+        ...(updates.title !== undefined ? { title: updates.title.trim() } : {}),
+        ...(updates.notes !== undefined ? { notes: updates.notes?.trim() || null } : {}),
+        ...(updates.category_slug !== undefined ? { category_slug: updates.category_slug } : {}),
+        ...(updates.priority !== undefined ? { priority: updates.priority } : {}),
+        ...(updates.assigned_member_id !== undefined
+          ? { assigned_member_id: updates.assigned_member_id }
+          : {}),
+        ...(updates.due_date !== undefined ? { due_date: updates.due_date || null } : {}),
+      };
+
+      const todoObj: TodoItem = {
+        ...existing,
+        ...sanitizedUpdates,
+      };
+
+      setTodos((prev) => prev.map((t) => (t.id === id ? todoObj : t)));
+
+      if (todoObj.due_date) {
+        const catObj = todoCategories.find((c) => c.slug === todoObj.category_slug);
+        const catLabel = catObj ? catObj.name : 'ToDo';
+        const assignedIds = todoObj.assigned_member_id
+          ? [todoObj.assigned_member_id]
+          : adultMemberIds;
+        const prefix = todoObj.is_completed ? '✅ Erledigt: ' : '';
+        const newEvent: CalendarEvent = {
+          id: `ev-todo-${todoObj.id}`,
+          household_id: household.id,
+          title: `${prefix}📌 Deadline [${catLabel}]: ${todoObj.title}`,
+          description: `${todoObj.notes ? `${todoObj.notes} • ` : ''}${
+            todoObj.assigned_member_id
+              ? 'Zugewiesenes Familien-ToDo'
+              : 'Offen für alle (jeder kann übernehmen)'
+          }`,
+          location: '8624 Grüt (ZH)',
+          start_at: `${todoObj.due_date}T00:00:00.000Z`,
+          end_at: `${todoObj.due_date}T23:59:59.000Z`,
+          is_all_day: true,
+          assigned_member_ids: assignedIds,
+          category: 'todo',
+          source_todo_id: todoObj.id,
+          sync_status: 'pending',
+          created_by_member_id: todoObj.created_by_member_id,
+          created_at: todoObj.created_at,
+          updated_at: new Date().toISOString(),
+        };
+        setCalendarEvents((prev) => {
+          const filtered = prev.filter((ev) => ev.source_todo_id !== id);
+          return [...filtered, newEvent].sort(
+            (a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+          );
+        });
+        if (isLiveSupabase) {
+          const supabase = createClient();
+          if (supabase) {
+            safeDb(
+              supabase.from('calendar_events').upsert(newEvent),
+              'upsert todo deadline event'
             );
-          });
-          if (isLiveSupabase) {
-            const supabase = createClient();
-            if (supabase) {
-              safeDb(
-                supabase.from('calendar_events').upsert(newEvent),
-                'upsert todo deadline event'
-              );
-            }
           }
-        } else {
-          setCalendarEvents((prev) => prev.filter((ev) => ev.source_todo_id !== id));
-          if (isLiveSupabase) {
-            const supabase = createClient();
-            if (supabase) {
-              safeDb(
-                supabase.from('calendar_events').delete().eq('source_todo_id', id),
-                'delete todo deadline event'
-              );
-            }
+        }
+      } else {
+        setCalendarEvents((prev) => prev.filter((ev) => ev.source_todo_id !== id));
+        if (isLiveSupabase) {
+          const supabase = createClient();
+          if (supabase) {
+            safeDb(
+              supabase.from('calendar_events').delete().eq('source_todo_id', id),
+              'delete todo deadline event'
+            );
           }
         }
       }
@@ -1382,11 +1375,11 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       if (isLiveSupabase) {
         const supabase = createClient();
         if (supabase) {
-          safeDb(supabase.from('todos').update(updates).eq('id', id), 'update todo');
+          safeDb(supabase.from('todos').update(sanitizedUpdates).eq('id', id), 'update todo');
         }
       }
     },
-    [adultMemberIds, household.id, isLiveSupabase, todoCategories]
+    [adultMemberIds, household.id, isLiveSupabase, todoCategories, todos]
   );
 
   const deleteTodo = useCallback((id: string) => {
@@ -1492,22 +1485,22 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   );
 
   const toggleHouseholdNeedPurchased = useCallback((id: string) => {
-    let newPurchased = false;
-    let newPurchasedAt: string | null = null;
+    const target = householdNeeds.find((n) => n.id === id);
+    if (!target) return;
+
+    const newPurchased = !target.is_purchased;
+    const newPurchasedAt = newPurchased ? new Date().toISOString() : null;
 
     setHouseholdNeeds((prev) =>
-      prev.map((n) => {
-        if (n.id === id) {
-          newPurchased = !n.is_purchased;
-          newPurchasedAt = newPurchased ? new Date().toISOString() : null;
-          return {
-            ...n,
-            is_purchased: newPurchased,
-            purchased_at: newPurchasedAt,
-          };
-        }
-        return n;
-      })
+      prev.map((n) =>
+        n.id === id
+          ? {
+              ...n,
+              is_purchased: newPurchased,
+              purchased_at: newPurchasedAt,
+            }
+          : n
+      )
     );
 
     if (isLiveSupabase) {
@@ -1522,7 +1515,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         );
       }
     }
-  }, [isLiveSupabase]);
+  }, [householdNeeds, isLiveSupabase]);
 
   const updateHouseholdNeed = useCallback(
     (

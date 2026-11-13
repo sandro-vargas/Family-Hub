@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   CloudSun,
@@ -11,16 +11,15 @@ import {
   Clock,
   MapPin,
   CheckSquare,
-  Hand,
   Check,
   Eye,
   EyeOff,
   ChevronLeft,
   ChevronRight,
+  RotateCcw,
 } from 'lucide-react';
 import { useFamily } from '@/context/family-context';
-import { CreatorBadge } from '@/components/creator-badge';
-import { CalendarEvent, WeatherData } from '@/types/family';
+import { CalendarEvent, TodoItem, WeatherData } from '@/types/family';
 import { MEMBER_TOCHTER_ID } from '@/lib/seed-data';
 
 function getWeekDays(baseDate: Date, weekOffset: number): Date[] {
@@ -47,7 +46,6 @@ export default function AndroidHomeScreenPage() {
   const {
     household,
     members,
-    activeMember,
     calendarEvents,
     todos,
     todoCategories,
@@ -68,6 +66,34 @@ export default function AndroidHomeScreenPage() {
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
+  // ToDo Undo & Quick-Reassign State
+  const [lastCompletedTodo, setLastCompletedTodo] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const assignableMembers = useMemo(
+    () => members.filter((m) => m.role === 'adult'),
+    [members]
+  );
+
+  const handleCompleteTodoWithUndo = (todo: TodoItem) => {
+    toggleTodoCompleted(todo.id);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setLastCompletedTodo({ id: todo.id, title: todo.title });
+    undoTimerRef.current = setTimeout(() => {
+      setLastCompletedTodo(null);
+    }, 6000);
+  };
+
+  const handleUndoTodo = () => {
+    if (!lastCompletedTodo) return;
+    toggleTodoCompleted(lastCompletedTodo.id);
+    setLastCompletedTodo(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
+
   useEffect(() => {
     setMounted(true);
     fetch('/api/weather')
@@ -76,7 +102,10 @@ export default function AndroidHomeScreenPage() {
       .catch(() => null);
 
     const timer = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
   }, []);
 
   const weekDays = useMemo(() => getWeekDays(now, weekOffset), [now, weekOffset]);
@@ -449,7 +478,7 @@ export default function AndroidHomeScreenPage() {
       </div>
 
       {/* Compact Open Family ToDos Card */}
-      {openTodos.length > 0 && (
+      {(openTodos.length > 0 || lastCompletedTodo !== null) && (
         <div className="bg-white/90 backdrop-blur-xl rounded-3xl p-4 shadow-sm border border-white space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -466,56 +495,91 @@ export default function AndroidHomeScreenPage() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {openTodos.slice(0, 4).map((todo) => {
-              const cat = todoCategories.find((c) => c.slug === todo.category_slug);
-              return (
-                <div
-                  key={todo.id}
-                  className="p-2.5 rounded-2xl bg-[#F4F7F5] border border-slate-200/80 flex items-center justify-between gap-2"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleTodoCompleted(todo.id)}
-                      className="h-5 w-5 rounded-md border-2 border-amber-600 bg-white hover:bg-amber-100 flex items-center justify-center shrink-0"
-                      title="ToDo direkt erledigen"
-                    >
-                      <Check className="h-3 w-3 text-amber-700 opacity-0 hover:opacity-100" />
-                    </button>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold text-white uppercase"
-                          style={{ backgroundColor: cat?.color_hex || '#EAB308' }}
-                        >
-                          {cat?.name || 'ToDo'}
-                        </span>
-                        {todo.due_date && (
-                          <span className="text-[10px] font-bold text-slate-600">
-                            Fällig: {todo.due_date.slice(8, 10)}.{todo.due_date.slice(5, 7)}.
-                          </span>
-                        )}
-                      </div>
-                      <p className="font-bold text-xs text-[#1E293B] truncate">{todo.title}</p>
-                    </div>
-                  </div>
+          {lastCompletedTodo && (
+            <div className="px-3 py-2 rounded-xl bg-[#1E293B] text-white text-xs flex items-center justify-between gap-2">
+              <span className="truncate">
+                ✓ ToDo „<strong>{lastCompletedTodo.title}</strong>“ erledigt
+              </span>
+              <button
+                type="button"
+                onClick={handleUndoTodo}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-[#1E293B] font-extrabold text-[11px] shrink-0"
+              >
+                <RotateCcw className="h-3 w-3" />
+                Rückgängig
+              </button>
+            </div>
+          )}
 
-                  {todo.assigned_member_id ? (
-                    <CreatorBadge memberId={todo.assigned_member_id} showName={false} />
-                  ) : activeMember.role === 'adult' ? (
-                    <button
-                      type="button"
-                      onClick={() => claimTodo(todo.id, activeMember.id)}
-                      className="px-2 py-1 rounded-xl bg-[#5CA6CE] hover:bg-[#488eb5] text-white text-[10px] font-extrabold flex items-center gap-1 shrink-0"
+          {openTodos.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {openTodos.slice(0, 4).map((todo) => {
+                const cat = todoCategories.find((c) => c.slug === todo.category_slug);
+                const assignedMember = todo.assigned_member_id
+                  ? getMemberById(todo.assigned_member_id)
+                  : null;
+                return (
+                  <div
+                    key={todo.id}
+                    className="p-2.5 rounded-2xl bg-[#F4F7F5] border border-slate-200/80 flex items-center justify-between gap-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => handleCompleteTodoWithUndo(todo)}
+                        className="h-5 w-5 rounded-md border-2 border-amber-600 bg-white hover:bg-amber-100 flex items-center justify-center shrink-0"
+                        title="ToDo direkt erledigen (für alle möglich)"
+                      >
+                        <Check className="h-3 w-3 text-amber-700 opacity-0 hover:opacity-100" />
+                      </button>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold text-white uppercase"
+                            style={{ backgroundColor: cat?.color_hex || '#EAB308' }}
+                          >
+                            {cat?.name || 'ToDo'}
+                          </span>
+                          {todo.due_date && (
+                            <span className="text-[10px] font-bold text-slate-600">
+                              Fällig: {todo.due_date.slice(8, 10)}.{todo.due_date.slice(5, 7)}.
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-bold text-xs text-[#1E293B] truncate">{todo.title}</p>
+                      </div>
+                    </div>
+
+                    <select
+                      value={todo.assigned_member_id || 'unassigned'}
+                      onChange={(e) =>
+                        claimTodo(
+                          todo.id,
+                          e.target.value === 'unassigned' ? null : e.target.value
+                        )
+                      }
+                      title="Zuständige Person direkt wechseln"
+                      className="rounded-xl px-2 py-1 text-[11px] font-extrabold border cursor-pointer shrink-0 focus:outline-none"
+                      style={{
+                        backgroundColor: assignedMember ? assignedMember.color_hex : '#5CA6CE',
+                        borderColor: 'transparent',
+                        color: '#FFFFFF',
+                      }}
                     >
-                      <Hand className="h-3 w-3" /> Übernehmen
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
+                      <option value="unassigned" className="text-slate-800 bg-white">
+                        Offen
+                      </option>
+                      {assignableMembers.map((m) => (
+                        <option key={m.id} value={m.id} className="text-slate-800 bg-white">
+                          {m.display_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>

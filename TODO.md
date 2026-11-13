@@ -91,6 +91,10 @@ Dieses Dokument bündelt alle offenen Aufgaben, Dein dediziertes Feedback pro Re
 ## ✅ Reiter: ToDos (`/todos`)
 
 ### Bereits abgeschlossen:
+- [x] **Erledigen für alle Personen:** Jedes Familienmitglied kann jedes ToDo (auch wenn es einer anderen Person zugewiesen ist) als erledigt markieren (inkl. synchronisiertem State-/Supabase-Fix).
+- [x] **Personenwechsel direkt per Klick:** Klick auf die zugewiesene Person in der ToDo-Übersicht (und auf dem Home-Screen) öffnet direkt die Auswahl für eine andere Person oder „Offen für alle“.
+- [x] **Rückgängig-Funktion (`Undo`):** Versehentlich abgehakte ToDos lassen sich sowohl über den Sofort-Undo-Banner als auch dauerhaft in der Liste (`↩ Rückgängig`) wieder öffnen.
+- [x] **Kompakte ToDo-Eingabe:** Das Erfassungsformular oben wurde als kompakte 2-zeilige Quick-Add-Leiste umgebaut, sodass die ToDo-Liste sofort sichtbar ist ohne weit nach unten scrollen zu müssen.
 - [x] **ToDos editierbar machen:** Bestehende Aufgaben nachträglich bearbeitbar gemacht (**Titel, Zuständigkeit, Priorität, Deadline, Notiz**).
 - [x] **Sortierung nach Priorität & Deadline:** Die ToDo-Übersicht nach **Priorität** und **Deadline** sortierbar gemacht.
 - [x] Kategorien (`Kita`, `Haushalt`, `Familie` + eigene Kategorien).
